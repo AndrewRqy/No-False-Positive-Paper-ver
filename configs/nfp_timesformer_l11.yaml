@@ -1,0 +1,17 @@
+# NFP identification on the TimeSformer layer-11 SAE (paper tab:master).
+# Run: python -m nfp_testing.nfp_test --config configs/nfp_timesformer_l11.yaml
+model_family: timesformer
+model_name: facebook/timesformer-base-finetuned-ssv2
+model_revision: main
+layer: 11
+attachment_point: post_mlp_residual
+sae_model: standard
+sae_path: checkpoints/timesformer_sae/ae.pt
+dataset_dir: data/nfp_v2_videos
+tau_mode: first_frame
+batch_size: 4
+num_workers: 4
+alpha: 0.05
+label: TimeSformer SAE L11
+device: cuda:0
+output_path: results/nfp/timesformer_l11.pt

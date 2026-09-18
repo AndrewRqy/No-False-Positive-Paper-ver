@@ -1,0 +1,18 @@
+# NFP identification on the VideoMAE-finetuned layer-11 SAE (paper tab:master).
+# Run: python -m nfp_testing.nfp_test --config configs/nfp_videomae_l11.yaml
+# Fill dataset_dir / sae_path / output_path for your machine.
+model_family: videomae
+model_name: MCG-NJU/videomae-base-finetuned-ssv2
+model_revision: main
+layer: 11
+attachment_point: post_mlp_residual
+sae_model: standard
+sae_path: checkpoints/videomae_sae/ae.pt
+dataset_dir: data/nfp_v2_videos
+tau_mode: first_frame
+batch_size: 4
+num_workers: 4
+alpha: 0.05
+label: VideoMAE SAE L11
+device: cuda:0
+output_path: results/nfp/videomae_l11.pt

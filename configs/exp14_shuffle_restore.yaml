@@ -1,0 +1,16 @@
+# Shuffle-and-restore causal tracing (paper tab:recovery, exp14).
+# Run: python -m causal_analysis.exp14_patching_restore.steer_shuffle_restore \
+#          --config configs/exp14_shuffle_restore.yaml
+model_name: MCG-NJU/videomae-base-finetuned-ssv2
+sae_path: checkpoints/videomae_sae/ae.pt
+nfp_results: results/nfp/sae_nfp_v2.pt
+screen_json: results/steering/expB2_pair_screen.json
+ssv2_videos: data/SSv2/videos
+ssv2_val_json: data/SSv2/labels/validation.json
+layer: 11
+per_class: 12
+static_t_bar: 2.0
+batch_size: 6
+seed: 0
+device: cuda:0
+out: results/steering/exp14_shuffle_restore.json

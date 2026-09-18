@@ -1,0 +1,24 @@
+# Windows dependencies (same as requirements.txt, but torch installed separately).
+#
+# On RTX 5070 / Blackwell (sm_120) install the CUDA 12.8 build FIRST:
+#   pip install torch torchvision --index-url https://download.pytorch.org/whl/cu128
+# then: pip install -r requirements-win.txt
+torch
+torchvision
+
+transformers==4.46.3
+huggingface-hub==0.26.3
+numpy==1.26.4
+scipy==1.14.1
+scikit-learn==1.5.2
+pandas==2.2.3
+einops==0.8.0
+pillow==11.0.0
+tqdm==4.67.1
+av==17.1.0
+zstandard==0.23.0
+nnsight==0.3.3
+matplotlib==3.9.3
+pyyaml==6.0.2
+
+# Optional (see requirements.txt): opencv-python==4.13.0, circuitsvis, umap-learn, plotly, datasets

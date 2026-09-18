@@ -1,0 +1,31 @@
+# V-JEPA2 environment.
+#
+# The V-JEPA2 wrapper (utils/models/vjepa2.py) imports VJEPA2Model,
+# VJEPA2ForVideoClassification and AutoVideoProcessor, which are NOT available in
+# the transformers==4.46.3 pinned in requirements.txt (that version predates
+# V-JEPA2 support). VideoMAE and TimeSformer runs use requirements.txt as-is;
+# V-JEPA2 runs need this environment instead.
+#
+# transformers gained V-JEPA2 in 4.52.0. Install this in a separate venv:
+#   pip install -r requirements-vjepa2.txt
+# then verify all three wrappers import:
+#   python -m tests.test_wrappers
+#
+# Pin verified for V-JEPA2 (also imports VideoMAE + TimeSformer):
+transformers>=4.52.0
+huggingface-hub>=0.30.0
+torch==2.1.2
+torchvision==0.16.2
+
+# unchanged from requirements.txt
+numpy==1.26.4
+scipy==1.14.1
+scikit-learn==1.5.2
+pandas==2.2.3
+einops==0.8.0
+pillow==11.0.0
+tqdm==4.67.1
+av==17.1.0
+zstandard==0.23.0
+nnsight==0.3.3
+matplotlib==3.9.3

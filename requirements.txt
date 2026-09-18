@@ -1,0 +1,33 @@
+# Core dependencies for reproducing the paper's experiments.
+# Versions are those the results were produced with.
+#
+# PyTorch: the pin below is the CUDA 12.1 build. For other CUDA versions install
+# torch/torchvision from the official index first, e.g.
+#   pip install torch==2.1.2 torchvision==0.16.2 --index-url https://download.pytorch.org/whl/cu121
+torch==2.1.2
+torchvision==0.16.2
+
+transformers==4.46.3
+huggingface-hub==0.26.3
+numpy==1.26.4
+scipy==1.14.1
+scikit-learn==1.5.2
+pandas==2.2.3
+einops==0.8.0
+pillow==11.0.0
+tqdm==4.67.1
+av==17.1.0            # SSv2 video decoding (utils/datasets/ssv2.py)
+zstandard==0.23.0     # activation-chunk storage (dictionary_learning)
+nnsight==0.3.3        # ActivationBuffer (dictionary_learning)
+matplotlib==3.9.3     # t-score distribution figure (nfp_testing/plot_tscore_dist.py)
+pyyaml==6.0.2         # configs/*.yaml experiment configs (utils/config.py)
+
+# --- Optional -----------------------------------------------------------------
+# Qualitative assets (GIF/MP4 demos, feature grids); not needed for any table:
+#   opencv-python==4.13.0
+# dictionary_learning/interp.py visualization + hf-dataset helper (unused by the
+# paper pipeline):
+#   circuitsvis==1.43.2
+#   umap-learn==0.5.7
+#   plotly==5.24.1
+#   datasets==3.1.0

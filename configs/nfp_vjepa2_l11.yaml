@@ -1,0 +1,18 @@
+# NFP identification on the V-JEPA2 layer-11 SAE (paper app:depth / tab:master).
+# Requires the V-JEPA2 environment (requirements-vjepa2.txt).
+# Run: python -m nfp_testing.nfp_test --config configs/nfp_vjepa2_l11.yaml
+model_family: vjepa2
+model_name: facebook/vjepa2-vitl-fpc16-256-ssv2
+model_revision: main
+layer: 11
+attachment_point: post_mlp_residual
+sae_model: standard
+sae_path: checkpoints/vjepa2_sae_l11/ae.pt
+dataset_dir: data/nfp_v2_videos
+tau_mode: first_frame
+batch_size: 4
+num_workers: 4
+alpha: 0.05
+label: V-JEPA2 SAE L11
+device: cuda:0
+output_path: results/nfp/vjepa2_l11.pt

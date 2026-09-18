@@ -1,0 +1,672 @@
+[
+ {
+  "key": "pull_lr",
+  "category": "direction",
+  "pos_idx": 86,
+  "neg_idx": 87,
+  "pos": "Pulling something from left to right",
+  "neg": "Pulling something from right to left"
+ },
+ {
+  "key": "push_lr",
+  "category": "direction",
+  "pos_idx": 93,
+  "neg_idx": 94,
+  "pos": "Pushing something from left to right",
+  "neg": "Pushing something from right to left"
+ },
+ {
+  "key": "cam_lr",
+  "category": "direction",
+  "pos_idx": 166,
+  "neg_idx": 167,
+  "pos": "Turning the camera left while filming something",
+  "neg": "Turning the camera right while filming something"
+ },
+ {
+  "key": "cam_ud",
+  "category": "direction",
+  "pos_idx": 165,
+  "neg_idx": 168,
+  "pos": "Turning the camera downwards while filming something",
+  "neg": "Turning the camera upwards while filming something"
+ },
+ {
+  "key": "move_ud",
+  "category": "direction",
+  "pos_idx": 43,
+  "neg_idx": 45,
+  "pos": "Moving something down",
+  "neg": "Moving something up"
+ },
+ {
+  "key": "obj_cam",
+  "category": "direction",
+  "pos_idx": 41,
+  "neg_idx": 44,
+  "pos": "Moving something away from the camera",
+  "neg": "Moving something towards the camera"
+ },
+ {
+  "key": "obj_toaway",
+  "category": "direction",
+  "pos_idx": 40,
+  "neg_idx": 42,
+  "pos": "Moving something away from something",
+  "neg": "Moving something closer to something"
+ },
+ {
+  "key": "twoobj_apart",
+  "category": "direction",
+  "pos_idx": 36,
+  "neg_idx": 37,
+  "pos": "Moving something and something away from each other",
+  "neg": "Moving something and something closer to each other"
+ },
+ {
+  "key": "cam_appr",
+  "category": "direction",
+  "pos_idx": 0,
+  "neg_idx": 32,
+  "pos": "Approaching something with your camera",
+  "neg": "Moving away from something with your camera"
+ },
+ {
+  "key": "open_close",
+  "category": "order",
+  "pos_idx": 46,
+  "neg_idx": 5,
+  "pos": "Opening something",
+  "neg": "Closing something"
+ },
+ {
+  "key": "cover_uncover",
+  "category": "order",
+  "pos_idx": 6,
+  "neg_idx": 171,
+  "pos": "Covering something with something",
+  "neg": "Uncovering something"
+ },
+ {
+  "key": "fold_unfold",
+  "category": "order",
+  "pos_idx": 14,
+  "neg_idx": 172,
+  "pos": "Folding something",
+  "neg": "Unfolding something"
+ },
+ {
+  "key": "plug_unplug",
+  "category": "order",
+  "pos_idx": 49,
+  "neg_idx": 89,
+  "pos": "Plugging something into something",
+  "neg": "Pulling something out of something"
+ },
+ {
+  "key": "putin_takeout",
+  "category": "order",
+  "pos_idx": 106,
+  "neg_idx": 148,
+  "pos": "Putting something into something",
+  "neg": "Taking something out of something"
+ },
+ {
+  "key": "puton_pushoff",
+  "category": "order",
+  "pos_idx": 112,
+  "neg_idx": 95,
+  "pos": "Putting something onto something",
+  "neg": "Pushing something off of something"
+ },
+ {
+  "key": "pick_put",
+  "category": "order",
+  "pos_idx": 47,
+  "neg_idx": 109,
+  "pos": "Picking something up",
+  "neg": "Putting something on a surface"
+ },
+ {
+  "key": "take_put",
+  "category": "order",
+  "pos_idx": 147,
+  "neg_idx": 109,
+  "pos": "Taking something from somewhere",
+  "neg": "Putting something on a surface"
+ },
+ {
+  "key": "reveal_cover",
+  "category": "order",
+  "pos_idx": 121,
+  "neg_idx": 6,
+  "pos": "Removing something, revealing something behind",
+  "neg": "Covering something with something"
+ },
+ {
+  "key": "fall_speed",
+  "category": "speed",
+  "pos_idx": 134,
+  "neg_idx": 135,
+  "pos": "Something falling like a feather or paper",
+  "neg": "Something falling like a rock"
+ },
+ {
+  "key": "roll_downup",
+  "category": "speed",
+  "pos_idx": 23,
+  "neg_idx": 24,
+  "pos": "Letting something roll down a slanted surface",
+  "neg": "Letting something roll up a slanted surface, so it rolls back down"
+ },
+ {
+  "key": "spin_stop",
+  "category": "accel_outcome",
+  "pos_idx": 139,
+  "neg_idx": 140,
+  "pos": "Spinning something so it continues spinning",
+  "neg": "Spinning something that quickly stops spinning"
+ },
+ {
+  "key": "lift_drop",
+  "category": "accel_outcome",
+  "pos_idx": 27,
+  "neg_idx": 28,
+  "pos": "Lifting something up completely without letting it drop down",
+  "neg": "Lifting something up completely, then letting it drop down"
+ },
+ {
+  "key": "liftend_drop",
+  "category": "accel_outcome",
+  "pos_idx": 30,
+  "neg_idx": 31,
+  "pos": "Lifting up one end of something without letting it drop down",
+  "neg": "Lifting up one end of something, then letting it drop down"
+ },
+ {
+  "key": "liftsurf_slide",
+  "category": "accel_outcome",
+  "pos_idx": 25,
+  "neg_idx": 26,
+  "pos": "Lifting a surface with something on it but not enough for it to slide down",
+  "neg": "Lifting a surface with something on it until it starts sliding down"
+ },
+ {
+  "key": "push_falloff",
+  "category": "accel_outcome",
+  "pos_idx": 98,
+  "neg_idx": 99,
+  "pos": "Pushing something so that it almost falls off but doesn't",
+  "neg": "Pushing something so that it falls off the table"
+ },
+ {
+  "key": "stack_collapse",
+  "category": "accel_outcome",
+  "pos_idx": 53,
+  "neg_idx": 54,
+  "pos": "Poking a stack of something so the stack collapses",
+  "neg": "Poking a stack of something without the stack collapsing"
+ },
+ {
+  "key": "moveacross_fall",
+  "category": "accel_outcome",
+  "pos_idx": 34,
+  "neg_idx": 35,
+  "pos": "Moving something across a surface until it falls down",
+  "neg": "Moving something across a surface without it falling down"
+ },
+ {
+  "key": "tilt_fall",
+  "category": "accel_outcome",
+  "pos_idx": 156,
+  "neg_idx": 157,
+  "pos": "Tilting something with something on it slightly so it doesn't fall down",
+  "neg": "Tilting something with something on it until it falls off"
+ },
+ {
+  "key": "slant_slide",
+  "category": "accel_outcome",
+  "pos_idx": 115,
+  "neg_idx": 116,
+  "pos": "Putting something that can't roll onto a slanted surface, so it slides down",
+  "neg": "Putting something that can't roll onto a slanted surface, so it stays where it is"
+ },
+ {
+  "key": "collide_halt",
+  "category": "accel_outcome",
+  "pos_idx": 132,
+  "neg_idx": 133,
+  "pos": "Something colliding with something and both are being deflected",
+  "neg": "Something colliding with something and both come to a halt"
+ },
+ {
+  "key": "stretch_separate",
+  "category": "accel_outcome",
+  "pos_idx": 91,
+  "neg_idx": 92,
+  "pos": "Pulling two ends of something so that it gets stretched",
+  "neg": "Pulling two ends of something so that it separates into two pieces"
+ },
+ {
+  "key": "pull_nothing_stretch",
+  "category": "accel_outcome",
+  "pos_idx": 90,
+  "neg_idx": 91,
+  "pos": "Pulling two ends of something but nothing happens",
+  "neg": "Pulling two ends of something so that it gets stretched"
+ },
+ {
+  "key": "tear_amount",
+  "category": "accel_outcome",
+  "pos_idx": 149,
+  "neg_idx": 150,
+  "pos": "Tearing something into two pieces",
+  "neg": "Tearing something just a little bit"
+ },
+ {
+  "key": "poke_move",
+  "category": "accel_outcome",
+  "pos_idx": 55,
+  "neg_idx": 56,
+  "pos": "Poking something so it slightly moves",
+  "neg": "Poking something so lightly that it doesn't or almost doesn't move"
+ },
+ {
+  "key": "poke_fall_spin",
+  "category": "accel_outcome",
+  "pos_idx": 57,
+  "neg_idx": 58,
+  "pos": "Poking something so that it falls over",
+  "neg": "Poking something so that it spins around"
+ },
+ {
+  "key": "plug_pullout",
+  "category": "accel_outcome",
+  "pos_idx": 50,
+  "neg_idx": 49,
+  "pos": "Plugging something into something but pulling it right out as you remove your hand",
+  "neg": "Plugging something into something"
+ },
+ {
+  "key": "throw_catch",
+  "category": "accel_outcome",
+  "pos_idx": 153,
+  "neg_idx": 154,
+  "pos": "Throwing something in the air and catching it",
+  "neg": "Throwing something in the air and letting it fall"
+ },
+ {
+  "key": "open_pretend",
+  "category": "pretend",
+  "pos_idx": 46,
+  "neg_idx": 67,
+  "pos": "Opening something",
+  "neg": "Pretending to open something without actually opening it"
+ },
+ {
+  "key": "close_pretend",
+  "category": "pretend",
+  "pos_idx": 5,
+  "neg_idx": 66,
+  "pos": "Closing something",
+  "neg": "Pretending to close something without actually closing it"
+ },
+ {
+  "key": "pick_pretend",
+  "category": "pretend",
+  "pos_idx": 47,
+  "neg_idx": 68,
+  "pos": "Picking something up",
+  "neg": "Pretending to pick something up"
+ },
+ {
+  "key": "throw_pretend",
+  "category": "pretend",
+  "pos_idx": 151,
+  "neg_idx": 83,
+  "pos": "Throwing something",
+  "neg": "Pretending to throw something"
+ },
+ {
+  "key": "pour_pretend",
+  "category": "pretend",
+  "pos_idx": 62,
+  "neg_idx": 70,
+  "pos": "Pouring something out of something",
+  "neg": "Pretending to pour something out of something, but something is empty"
+ },
+ {
+  "key": "take_pretend",
+  "category": "pretend",
+  "pos_idx": 147,
+  "neg_idx": 81,
+  "pos": "Taking something from somewhere",
+  "neg": "Pretending to take something from somewhere"
+ },
+ {
+  "key": "takeout_pretend",
+  "category": "pretend",
+  "pos_idx": 148,
+  "neg_idx": 82,
+  "pos": "Taking something out of something",
+  "neg": "Pretending to take something out of something"
+ },
+ {
+  "key": "putin_pretend",
+  "category": "pretend",
+  "pos_idx": 106,
+  "neg_idx": 72,
+  "pos": "Putting something into something",
+  "neg": "Pretending to put something into something"
+ },
+ {
+  "key": "putbehind_pretend",
+  "category": "pretend",
+  "pos_idx": 104,
+  "neg_idx": 71,
+  "pos": "Putting something behind something",
+  "neg": "Pretending to put something behind something"
+ },
+ {
+  "key": "putnext_pretend",
+  "category": "pretend",
+  "pos_idx": 107,
+  "neg_idx": 73,
+  "pos": "Putting something next to something",
+  "neg": "Pretending to put something next to something"
+ },
+ {
+  "key": "putsurf_pretend",
+  "category": "pretend",
+  "pos_idx": 109,
+  "neg_idx": 74,
+  "pos": "Putting something on a surface",
+  "neg": "Pretending to put something on a surface"
+ },
+ {
+  "key": "putonto_pretend",
+  "category": "pretend",
+  "pos_idx": 112,
+  "neg_idx": 75,
+  "pos": "Putting something onto something",
+  "neg": "Pretending to put something onto something"
+ },
+ {
+  "key": "putunder_pretend",
+  "category": "pretend",
+  "pos_idx": 118,
+  "neg_idx": 76,
+  "pos": "Putting something underneath something",
+  "neg": "Pretending to put something underneath something"
+ },
+ {
+  "key": "turn_pretend",
+  "category": "pretend",
+  "pos_idx": 164,
+  "neg_idx": 84,
+  "pos": "Turning something upside down",
+  "neg": "Pretending to turn something upside down"
+ },
+ {
+  "key": "squeeze_pretend",
+  "category": "pretend",
+  "pos_idx": 143,
+  "neg_idx": 80,
+  "pos": "Squeezing something",
+  "neg": "Pretending to squeeze something"
+ },
+ {
+  "key": "scoop_pretend",
+  "category": "pretend",
+  "pos_idx": 123,
+  "neg_idx": 77,
+  "pos": "Scooping something up with something",
+  "neg": "Pretending to scoop something up with something"
+ },
+ {
+  "key": "attach_fail",
+  "category": "fail",
+  "pos_idx": 1,
+  "neg_idx": 161,
+  "pos": "Attaching something to something",
+  "neg": "Trying but failing to attach something to something because it doesn't stick"
+ },
+ {
+  "key": "putin_fail",
+  "category": "fail",
+  "pos_idx": 106,
+  "neg_idx": 13,
+  "pos": "Putting something into something",
+  "neg": "Failing to put something into something because something does not fit"
+ },
+ {
+  "key": "pour_fail",
+  "category": "fail",
+  "pos_idx": 59,
+  "neg_idx": 163,
+  "pos": "Pouring something into something",
+  "neg": "Trying to pour something into something, but missing so it spills next to it"
+ },
+ {
+  "key": "twist_fail",
+  "category": "fail",
+  "pos_idx": 170,
+  "neg_idx": 64,
+  "pos": "Twisting something",
+  "neg": "Pretending or trying and failing to twist something"
+ },
+ {
+  "key": "wipe_fail",
+  "category": "fail",
+  "pos_idx": 173,
+  "neg_idx": 63,
+  "pos": "Wiping something off of something",
+  "neg": "Pretending or failing to wipe something off of something"
+ },
+ {
+  "key": "bend_fail",
+  "category": "fail",
+  "pos_idx": 2,
+  "neg_idx": 162,
+  "pos": "Bending something so that it deforms",
+  "neg": "Trying to bend something unbendable so nothing happens"
+ },
+ {
+  "key": "bury_digout",
+  "category": "order",
+  "kind": "temporal",
+  "pos_idx": 4,
+  "neg_idx": 7,
+  "pos": "Burying something in something",
+  "neg": "Digging something out of something"
+ },
+ {
+  "key": "stuff_takeout",
+  "category": "order",
+  "kind": "temporal",
+  "pos_idx": 145,
+  "neg_idx": 148,
+  "pos": "Stuffing something into something",
+  "neg": "Taking something out of something"
+ },
+ {
+  "key": "pour_inout",
+  "category": "direction",
+  "kind": "temporal",
+  "pos_idx": 59,
+  "neg_idx": 62,
+  "pos": "Pouring something into something",
+  "neg": "Pouring something out of something"
+ },
+ {
+  "key": "roll_flat_down",
+  "category": "direction",
+  "kind": "temporal",
+  "pos_idx": 22,
+  "neg_idx": 23,
+  "pos": "Letting something roll along a flat surface",
+  "neg": "Letting something roll down a slanted surface"
+ },
+ {
+  "key": "pour_overflow",
+  "category": "accel_outcome",
+  "kind": "temporal",
+  "pos_idx": 59,
+  "neg_idx": 60,
+  "pos": "Pouring something into something",
+  "neg": "Pouring something into something until it overflows"
+ },
+ {
+  "key": "bend_degree",
+  "category": "accel_outcome",
+  "kind": "temporal",
+  "pos_idx": 2,
+  "neg_idx": 3,
+  "pos": "Bending something so that it deforms",
+  "neg": "Bending something until it breaks"
+ },
+ {
+  "key": "put_edge_fall",
+  "category": "accel_outcome",
+  "kind": "temporal",
+  "pos_idx": 108,
+  "neg_idx": 110,
+  "pos": "Putting something on a flat surface without letting it roll",
+  "neg": "Putting something on the edge of something so it is not supported and falls down"
+ },
+ {
+  "key": "putonto_fall",
+  "category": "accel_outcome",
+  "kind": "temporal",
+  "pos_idx": 112,
+  "neg_idx": 113,
+  "pos": "Putting something onto something",
+  "neg": "Putting something onto something else that cannot support it so it falls down"
+ },
+ {
+  "key": "upright_fallside",
+  "category": "accel_outcome",
+  "kind": "temporal",
+  "pos_idx": 119,
+  "neg_idx": 117,
+  "pos": "Putting something upright on the table",
+  "neg": "Putting something that cannot actually stand upright upright on the table, so it falls on its side"
+ },
+ {
+  "key": "spread_pretend",
+  "category": "pretend",
+  "kind": "temporal",
+  "pos_idx": 141,
+  "neg_idx": 78,
+  "pos": "Spreading something onto something",
+  "neg": "Pretending to spread air onto something"
+ },
+ {
+  "key": "sprinkle_pretend",
+  "category": "pretend",
+  "kind": "temporal",
+  "pos_idx": 142,
+  "neg_idx": 79,
+  "pos": "Sprinkling something onto something",
+  "neg": "Pretending to sprinkle air onto something"
+ },
+ {
+  "key": "tear_pretend",
+  "category": "pretend",
+  "kind": "temporal",
+  "pos_idx": 149,
+  "neg_idx": 65,
+  "pos": "Tearing something into two pieces",
+  "neg": "Pretending to be tearing something that is not tearable"
+ },
+ {
+  "key": "count_2_3",
+  "category": "reference",
+  "kind": "reference",
+  "pos_idx": 103,
+  "neg_idx": 120,
+  "pos": "Putting something and something on the table",
+  "neg": "Putting something, something and something on the table"
+ },
+ {
+  "key": "empty_inside",
+  "category": "reference",
+  "kind": "reference",
+  "pos_idx": 129,
+  "neg_idx": 130,
+  "pos": "Showing that something is empty",
+  "neg": "Showing that something is inside something"
+ },
+ {
+  "key": "photo_object",
+  "category": "reference",
+  "kind": "reference",
+  "pos_idx": 124,
+  "neg_idx": 128,
+  "pos": "Showing a photo of something to the camera",
+  "neg": "Showing something to the camera"
+ },
+ {
+  "key": "hold_pile",
+  "category": "reference",
+  "kind": "reference",
+  "pos_idx": 16,
+  "neg_idx": 48,
+  "pos": "Holding something",
+  "neg": "Piling something up"
+ },
+ {
+  "key": "hold_behind_front",
+  "category": "reference",
+  "kind": "reference",
+  "pos_idx": 17,
+  "neg_idx": 18,
+  "pos": "Holding something behind something",
+  "neg": "Holding something in front of something"
+ },
+ {
+  "key": "hold_next_over",
+  "category": "reference",
+  "kind": "reference",
+  "pos_idx": 19,
+  "neg_idx": 20,
+  "pos": "Holding something next to something",
+  "neg": "Holding something over something"
+ },
+ {
+  "key": "hold_front_over",
+  "category": "reference",
+  "kind": "reference",
+  "pos_idx": 18,
+  "neg_idx": 20,
+  "pos": "Holding something in front of something",
+  "neg": "Holding something over something"
+ },
+ {
+  "key": "show_behind_next",
+  "category": "reference",
+  "kind": "reference",
+  "pos_idx": 125,
+  "neg_idx": 126,
+  "pos": "Showing something behind something",
+  "neg": "Showing something next to something"
+ },
+ {
+  "key": "show_next_ontop",
+  "category": "reference",
+  "kind": "reference",
+  "pos_idx": 126,
+  "neg_idx": 127,
+  "pos": "Showing something next to something",
+  "neg": "Showing something on top of something"
+ },
+ {
+  "key": "show_behind_ontop",
+  "category": "reference",
+  "kind": "reference",
+  "pos_idx": 125,
+  "neg_idx": 127,
+  "pos": "Showing something behind something",
+  "neg": "Showing something on top of something"
+ }
+]
