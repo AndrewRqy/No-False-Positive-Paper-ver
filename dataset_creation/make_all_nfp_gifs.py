@@ -2,16 +2,17 @@
 Convert ALL NFP ball videos (16 PNG frames each) into looping GIFs for eyeballing.
 
 Same construction as the demos (analysis/make_nfp_demo.py): a GIF is just the 16
-existing frames sequenced at a fixed fps — NO extra/interpolated frames are added.
+existing frames sequenced at a fixed fps - NO extra/interpolated frames are added.
 The only transforms are an optional nearest-neighbor upscale (for visibility) and
 BGR->RGB. Raw frames, no text/marker overlay, so the actual ball motion is clean to
 inspect. One GIF per video, named by its video id (v00000.gif ...), plus a manifest.csv
 mapping id -> profile_type / mean speed / max speed / on_screen count so high-activation
 ids can be correlated against motion type.
 
-Usage (from sae-for-vlm/):
+Usage (from repo root):
     python analysis/make_all_nfp_gifs.py --nfp_dir data/output/nfp --out_dir data/output/nfp_gifs
 """
+
 import argparse
 import json
 from concurrent.futures import ProcessPoolExecutor, as_completed
@@ -36,6 +37,7 @@ def make_one(args):
     vdir_str, out_str, scale, fps = args
     vdir, out_dir = Path(vdir_str), Path(out_str)
     import imageio.v2 as imageio
+
     frames = []
     for i in range(N_FRAMES):
         img = cv2.imread(str(vdir / f"rgba_{i:05d}.png"))
@@ -68,8 +70,10 @@ def main():
     dirs = sorted(Path(args.nfp_dir).glob("v*"))
     if args.limit:
         dirs = dirs[: args.limit]
-    print(f"Converting {len(dirs)} videos -> {out_dir}  (fps={args.fps}, scale={args.scale}, "
-          f"workers={args.workers})")
+    print(
+        f"Converting {len(dirs)} videos -> {out_dir}  (fps={args.fps}, scale={args.scale}, "
+        f"workers={args.workers})"
+    )
 
     tasks = [(str(d), str(out_dir), args.scale, args.fps) for d in dirs]
     rows, fails, done = [], [], 0

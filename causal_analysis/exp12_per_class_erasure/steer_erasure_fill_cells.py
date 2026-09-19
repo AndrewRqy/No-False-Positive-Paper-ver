@@ -1,17 +1,20 @@
-"""
+"""Erasure Fill Cells - fill the missing erasure-table cells.
+
 Fill the missing erasure-table cells:
   - family battery (13 classes): static-N span
   - all-class battery (174 classes x 10): random seed-202 span, activation-matched span
 
 Control sets sized to the flagged count. Same batteries as expEv2/expC4v2.
 
-Usage (from sae-for-vlm/):
-  python analysis/steer_erasure_fill_cells.py
+Usage (from repo root):
+  python -m causal_analysis.exp12_per_class_erasure.steer_erasure_fill_cells
 """
+
 import argparse
 import json
 import sys
 from pathlib import Path
+from typing import Dict, List, Tuple
 
 import numpy as np
 import torch
@@ -25,7 +28,8 @@ from causal_analysis.common.steer_pair_screen import ItemFrames
 from causal_analysis.common.steer_span_erasure import projector
 
 
-def main():
+def main() -> None:
+    """Build the static/random/activation-matched control spans and fill the erasure table cells."""
     ap = argparse.ArgumentParser()
     ap.add_argument("--model_name", default="MCG-NJU/videomae-base-finetuned-ssv2")
     ap.add_argument("--sae_path", default="local_runs/sae/ae.pt")
@@ -33,8 +37,10 @@ def main():
     ap.add_argument("--c4_json", default="local_runs/steering/expC4v2_span_erasure.json")
     ap.add_argument("--probe_cache", default="local_runs/steering/expD4_probe_cache.pt")
     ap.add_argument("--ssv2_videos", default="../SSv2/videos")
-    ap.add_argument("--ssv2_val_json",
-                    default="../SSv2/raw/20bn-something-something-download-package-labels/labels/validation.json")
+    ap.add_argument(
+        "--ssv2_val_json",
+        default="../SSv2/raw/20bn-something-something-download-package-labels/labels/validation.json",
+    )
     ap.add_argument("--layer", default=11, type=int)
     ap.add_argument("--excess_bar", default=0.4, type=float)
     ap.add_argument("--n_per_class", default=10, type=int)
@@ -48,7 +54,8 @@ def main():
 
     clf = VideoMAEForVideoClassification.from_pretrained(args.model_name).to(device).eval()
     label2idx = {v: int(k) for k, v in clf.config.id2label.items()}
-    sae = AutoEncoder.from_pretrained(args.sae_path, device=device); sae.eval()
+    sae = AutoEncoder.from_pretrained(args.sae_path, device=device)
+    sae.eval()
     steer = SteerLayer(clf.videomae.encoder.layer[args.layer], sae).to(device)
     clf.videomae.encoder.layer[args.layer] = steer
     proc = VideoMAEImageProcessor.from_pretrained(args.model_name)
@@ -76,24 +83,53 @@ def main():
     order_pool = sorted(nonsig, key=lambda k: mean_act[k])
     pool_acts = np.array([mean_act[k] for k in order_pool])
     for k in sig:
-        j = int(np.argmin(np.abs(pool_acts - mean_act[k]) + 1e9 * np.isin(
-            np.arange(len(order_pool)), list(taken))))
-        taken.add(j); match.append(order_pool[j])
+        j = int(
+            np.argmin(
+                np.abs(pool_acts - mean_act[k])
+                + 1e9 * np.isin(np.arange(len(order_pool)), list(taken))
+            )
+        )
+        taken.add(j)
+        match.append(order_pool[j])
     match = sorted(match)
     print(f"flagged {n}; static pool {len(static_pool)}")
 
-    fam = [r["cls"] for r in json.load(open(args.c4_json))["per_class_top"]
-           if r["excess"] >= args.excess_bar]
+    fam = [
+        r["cls"]
+        for r in json.load(open(args.c4_json))["per_class_top"]
+        if r["excess"] >= args.excess_bar
+    ]
     val = json.load(open(args.ssv2_val_json))
-    vrng = np.random.RandomState(args.seed + 1); vrng.shuffle(val)
+    vrng = np.random.RandomState(args.seed + 1)
+    vrng.shuffle(val)
 
     Wd = sae.decoder.weight.data.cpu()
 
-    def battery(classes, tag, sets):
+    def battery(
+        classes: List[int], tag: str, sets: List[Tuple[str, List[int]]]
+    ) -> Dict[str, float]:
+        """Stream a class battery through the model and score each erasure span.
+
+        Mines up to n_per_class validation clips per class, decodes them one item at a time
+        with a skip guard for ragged videos, and forwards every erasure span on each decoded
+        batch so nothing is held in RAM.
+
+        Args:
+            classes: SSv2 class indices making up the battery.
+            tag: Short label used in progress logging.
+            sets: Named feature index sets; each is turned into a decoder-span projector and
+                scored.
+
+        Returns:
+            Mapping from set name to its top-1 accuracy over the battery.
+        """
         items, labels = [], []
         for c in classes:
-            take = [it for it in val if label2idx.get(it.get("template", ""), -1) == c][:args.n_per_class]
-            items += take; labels += [c] * len(take)
+            take = [it for it in val if label2idx.get(it.get("template", ""), -1) == c][
+                : args.n_per_class
+            ]
+            items += take
+            labels += [c] * len(take)
         # stream per item with skip guard (some val videos decode ragged);
         # forward every set on each decoded batch so nothing is held in RAM
         ds = ItemFrames(args.ssv2_videos, items)
@@ -104,7 +140,8 @@ def main():
         buf = []
         n_skip = 0
 
-        def flush():
+        def flush() -> None:
+            """Forward the buffered clips under every erasure span, then clear the buffer."""
             if not buf:
                 return
             pv = torch.cat(buf, 0).to(device)
@@ -140,8 +177,7 @@ def main():
     res = {}
     res["family"] = battery(fam, "family", [("static", static_set)])
     all_classes = sorted(label2idx.values())
-    res["all_class"] = battery(all_classes, "all-class",
-                               [("rnd_s202", r2), ("actmatch", match)])
+    res["all_class"] = battery(all_classes, "all-class", [("rnd_s202", r2), ("actmatch", match)])
     Path(args.out).parent.mkdir(parents=True, exist_ok=True)
     json.dump(res, open(args.out, "w"), indent=2)
     print(f"Saved -> {args.out}")

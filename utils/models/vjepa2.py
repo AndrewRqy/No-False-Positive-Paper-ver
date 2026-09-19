@@ -8,6 +8,7 @@ Token layout: FRAME-MAJOR with no CLS token:
     index = t * 256 + s        (t = tubelet 0..7, s = spatial cell 0..255)
 The processor emits `pixel_values_videos` [B, 16, 3, 256, 256].
 """
+
 from transformers import VJEPA2Model, AutoVideoProcessor
 import torch
 import torch.nn as nn
@@ -36,13 +37,15 @@ class VJEPA2:
     def attach(self, attachment_point, layer, sae=None):
         if attachment_point not in self.attach_methods:
             raise NotImplementedError(
-                f"Attachment point '{attachment_point}' not implemented for VJEPA2")
+                f"Attachment point '{attachment_point}' not implemented for VJEPA2"
+            )
         self.attach_methods[attachment_point](layer, sae)
         self.register[f"{attachment_point}_{layer}"] = []
 
     def _attach_post_mlp_residual(self, layer, sae):
         self.model.encoder.layer[layer] = _LayerPostMlpResidual(
-            self.model.encoder.layer[layer], sae, layer, self.register)
+            self.model.encoder.layer[layer], sae, layer, self.register
+        )
 
     def _attach_pooler_post_selfattn(self, layer, sae):
         # token-structured stream inside the SSv2 attentive probe: output of
@@ -50,8 +53,8 @@ class VJEPA2:
         if sae is not None:
             raise NotImplementedError("SAE attachment not supported at the pooler")
         from transformers import VJEPA2ForVideoClassification
-        self.model = VJEPA2ForVideoClassification.from_pretrained(
-            self.model_name).to(self.device)
+
+        self.model = VJEPA2ForVideoClassification.from_pretrained(self.model_name).to(self.device)
         key = f"pooler_post_selfattn_{layer}"
 
         def hook(_mod, _inp, out):
@@ -69,8 +72,9 @@ class _LayerPostMlpResidual(nn.Module):
         self.layer_idx = layer_idx
         self.register = register
 
-    def forward(self, hidden_states: torch.Tensor, *args, **kwargs
-                ) -> Union[Tuple[torch.Tensor, ...], torch.Tensor]:
+    def forward(
+        self, hidden_states: torch.Tensor, *args, **kwargs
+    ) -> Union[Tuple[torch.Tensor, ...], torch.Tensor]:
         kwargs.pop("head_mask", None)
         outputs = self.base_layer(hidden_states, *args, **kwargs)
         if isinstance(outputs, torch.Tensor):

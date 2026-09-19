@@ -1,4 +1,5 @@
-"""
+"""Repair Add-ons - per-class amplification gains and a random-class ablation.
+
 Repair-subsection additions for the paper (VideoMAE, v2 flags):
 
 1. Per-class net accuracy under identified-set amplification across the alpha
@@ -10,13 +11,15 @@ Repair-subsection additions for the paper (VideoMAE, v2 flags):
    classes drawn at random from OUTSIDE the family (seeded), to show the gain
    is specific to the feature-dependent classes.
 
-Usage (from sae-for-vlm/):
-  python analysis/steer_repair_addons.py
+Usage (from repo root):
+  python -m causal_analysis.exp02_amplification_dose.steer_repair_addons
 """
+
 import argparse
 import json
 import sys
 from pathlib import Path
+from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
 import torch
@@ -29,19 +32,24 @@ from causal_analysis.common.steer_ssv2_logits import SteerLayer, ssv2_collate
 from causal_analysis.common.steer_pair_screen import ItemFrames
 
 
-def main():
+def main() -> None:
+    """Run the amplification repair add-ons and the random-class ablation, then save JSON."""
     ap = argparse.ArgumentParser()
     ap.add_argument("--model_name", default="MCG-NJU/videomae-base-finetuned-ssv2")
     ap.add_argument("--sae_path", default="local_runs/sae/ae.pt")
     ap.add_argument("--nfp_results", default="local_runs/nfp_results/sae_nfp_v2.pt")
     ap.add_argument("--c4_json", default="local_runs/steering/expC4v2_span_erasure.json")
     ap.add_argument("--ssv2_videos", default="../SSv2/videos")
-    ap.add_argument("--ssv2_val_json",
-                    default="../SSv2/raw/20bn-something-something-download-package-labels/labels/validation.json")
+    ap.add_argument(
+        "--ssv2_val_json",
+        default="../SSv2/raw/20bn-something-something-download-package-labels/labels/validation.json",
+    )
     ap.add_argument("--layer", default=11, type=int)
     ap.add_argument("--excess_bar", default=0.4, type=float)
     ap.add_argument("--mine_per_class", default=24, type=int)
-    ap.add_argument("--alphas", nargs="*", type=float, default=[1.5, 2.0, 3.0, 4.0, 5.0, 6.0, 8.0, 10.0])
+    ap.add_argument(
+        "--alphas", nargs="*", type=float, default=[1.5, 2.0, 3.0, 4.0, 5.0, 6.0, 8.0, 10.0]
+    )
     ap.add_argument("--n_random_classes", default=13, type=int)
     ap.add_argument("--batch_size", default=6, type=int)
     ap.add_argument("--seed", default=0, type=int)
@@ -53,7 +61,8 @@ def main():
     clf = VideoMAEForVideoClassification.from_pretrained(args.model_name).to(device).eval()
     id2label = clf.config.id2label
     label2idx = {v: int(k) for k, v in id2label.items()}
-    sae = AutoEncoder.from_pretrained(args.sae_path, device=device); sae.eval()
+    sae = AutoEncoder.from_pretrained(args.sae_path, device=device)
+    sae.eval()
     steer = SteerLayer(clf.videomae.encoder.layer[args.layer], sae).to(device)
     clf.videomae.encoder.layer[args.layer] = steer
     proc = VideoMAEImageProcessor.from_pretrained(args.model_name)
@@ -66,43 +75,78 @@ def main():
     idx_sig = torch.tensor(sig)
     print(f"identified features: {len(sig)}")
 
-    fam = [r["cls"] for r in json.load(open(args.c4_json))["per_class_top"]
-           if r["excess"] >= args.excess_bar]
+    fam = [
+        r["cls"]
+        for r in json.load(open(args.c4_json))["per_class_top"]
+        if r["excess"] >= args.excess_bar
+    ]
     print(f"family classes: {len(fam)}")
 
     val = json.load(open(args.ssv2_val_json))
-    vrng = np.random.RandomState(args.seed + 1); vrng.shuffle(val)
+    vrng = np.random.RandomState(args.seed + 1)
+    vrng.shuffle(val)
     by_cls = {}
     for it in val:
         c = label2idx.get(it.get("template", ""), -1)
         if c >= 0:
             by_cls.setdefault(c, []).append(it)
 
-    def run(cache, patch_sets=None):
+    def run(
+        cache: List[torch.Tensor], patch_sets: Optional[Tuple[torch.Tensor, float]] = None
+    ) -> np.ndarray:
+        """Predict SSv2 classes over a batch cache, optionally amplifying a feature set.
+
+        Args:
+            cache: Per-batch pixel-value tensors to forward through the classifier.
+            patch_sets: Optional (feature indices, alpha) pair. When given, each batch is
+                first run to capture the features' activations, which are then re-injected
+                scaled by alpha before the scored forward pass.
+
+        Returns:
+            Concatenated argmax predictions over all batches.
+        """
         preds = []
         for pv in cache:
             pv = pv.to(device)
             if patch_sets is not None:
                 idx, alpha = patch_sets
-                steer.record_tokens_idx = idx; steer.captured_tokens = []
+                steer.record_tokens_idx = idx
+                steer.captured_tokens = []
                 with torch.no_grad():
                     clf(pixel_values=pv)
                 steer.record_tokens_idx = None
                 fvals = steer.captured_tokens[0]
-                steer.patch_idx = idx; steer.patch_vals = alpha * fvals
+                steer.patch_idx = idx
+                steer.patch_vals = alpha * fvals
             with torch.no_grad():
                 preds.append(clf(pixel_values=pv).logits.argmax(-1).cpu().numpy())
             steer.patch_idx = steer.patch_vals = None
         return np.concatenate(preds)
 
-    def evaluate(classes, tag):
+    def evaluate(classes: List[int], tag: str) -> Dict[str, Any]:
+        """Score baseline and amplified accuracy for a set of classes across the alpha grid.
+
+        Args:
+            classes: SSv2 class indices to mine validation clips for and evaluate.
+            tag: Short label used in progress logging.
+
+        Returns:
+            Nested results dict with baseline accuracy, per-class baselines, and, per
+            alpha, net/macro accuracy plus the best and worst per-class deltas.
+        """
         items, labels = [], []
         for c in classes:
             take = by_cls.get(c, [])[: args.mine_per_class]
-            items += take; labels += [c] * len(take)
+            items += take
+            labels += [c] * len(take)
         labels = np.array(labels)
-        dl = DataLoader(ItemFrames(args.ssv2_videos, items), batch_size=args.batch_size,
-                        shuffle=False, num_workers=0, collate_fn=ssv2_collate(proc))
+        dl = DataLoader(
+            ItemFrames(args.ssv2_videos, items),
+            batch_size=args.batch_size,
+            shuffle=False,
+            num_workers=0,
+            collate_fn=ssv2_collate(proc),
+        )
         cache = [b[0]["pixel_values"] for b in dl]
         base = run(cache)
         base_acc = float((base == labels).mean())
@@ -116,27 +160,41 @@ def main():
             pcls = {int(c): float((pred[labels == c] == c).mean()) for c in classes}
             macro = float(np.mean(list(pcls.values())))
             deltas = {c: pcls[c] - per_class_base[c] for c in pcls}
-            best_c = max(deltas, key=deltas.get); worst_c = min(deltas, key=deltas.get)
+            best_c = max(deltas, key=deltas.get)
+            worst_c = min(deltas, key=deltas.get)
             out["alphas"][f"{a:g}"] = {
-                "net_acc": round(net, 3), "delta": round(net - base_acc, 3),
+                "net_acc": round(net, 3),
+                "delta": round(net - base_acc, 3),
                 "macro_acc": round(macro, 3),
                 "per_class": {str(c): round(v, 3) for c, v in pcls.items()},
-                "best_class": {"cls": best_c, "label": id2label[best_c],
-                               "base": round(per_class_base[best_c], 3),
-                               "steered": round(pcls[best_c], 3)},
-                "worst_class": {"cls": worst_c, "label": id2label[worst_c],
-                                "base": round(per_class_base[worst_c], 3),
-                                "steered": round(pcls[worst_c], 3)}}
-            print(f"  a={a:<4g} net={net:.3f} ({net-base_acc:+.3f}) macro={macro:.3f} "
-                  f"best {id2label[best_c][:28]} {per_class_base[best_c]:.2f}->{pcls[best_c]:.2f} "
-                  f"worst {id2label[worst_c][:28]} {per_class_base[worst_c]:.2f}->{pcls[worst_c]:.2f}")
+                "best_class": {
+                    "cls": best_c,
+                    "label": id2label[best_c],
+                    "base": round(per_class_base[best_c], 3),
+                    "steered": round(pcls[best_c], 3),
+                },
+                "worst_class": {
+                    "cls": worst_c,
+                    "label": id2label[worst_c],
+                    "base": round(per_class_base[worst_c], 3),
+                    "steered": round(pcls[worst_c], 3),
+                },
+            }
+            print(
+                f"  a={a:<4g} net={net:.3f} ({net-base_acc:+.3f}) macro={macro:.3f} "
+                f"best {id2label[best_c][:28]} {per_class_base[best_c]:.2f}->{pcls[best_c]:.2f} "
+                f"worst {id2label[worst_c][:28]} {per_class_base[worst_c]:.2f}->{pcls[worst_c]:.2f}"
+            )
         return out
 
     res = {"family": evaluate(fam, "family (13 feature-dependent classes)")}
 
     pool = [c for c in sorted(by_cls) if c not in set(fam)]
-    rnd_classes = sorted(np.random.RandomState(args.seed + 11).choice(
-        pool, args.n_random_classes, replace=False).tolist())
+    rnd_classes = sorted(
+        np.random.RandomState(args.seed + 11)
+        .choice(pool, args.n_random_classes, replace=False)
+        .tolist()
+    )
     print("random classes:", [id2label[c][:40] for c in rnd_classes])
     res["random_classes"] = evaluate(rnd_classes, "random 13 classes (ablation)")
     res["random_class_ids"] = rnd_classes

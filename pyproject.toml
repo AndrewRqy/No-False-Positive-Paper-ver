@@ -1,0 +1,24 @@
+[project]
+name = "no-false-positive"
+version = "0.1.0"
+description = "Identifying and steering temporal features in video-model sparse autoencoders"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "Apache-2.0" }
+
+[project.optional-dependencies]
+dev = [
+    "black>=23.0.0",
+    "ruff>=0.1.0",
+]
+
+[tool.black]
+line-length = 100
+target-version = ['py310']
+# The vendored SAE library keeps its upstream formatting.
+extend-exclude = "dictionary_learning/"
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+extend-exclude = ["dictionary_learning"]

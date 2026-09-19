@@ -8,6 +8,7 @@ the time-embedding block the token stream is PATCH-MAJOR:
     index = 1 + s * T + t      (CLS at 0, s = spatial cell 0..195, t = frame 0..7)
 unlike VideoMAE's frame-major t * 196 + s (no CLS).
 """
+
 from transformers import TimesformerModel, AutoImageProcessor
 import torch
 import torch.nn as nn
@@ -19,7 +20,7 @@ class Timesformer:
         self.device = device
         self.model = TimesformerModel.from_pretrained(model_name).to(device)
         self.processor = AutoImageProcessor.from_pretrained(model_name)
-        self.num_frames = self.model.config.num_frames          # 8
+        self.num_frames = self.model.config.num_frames  # 8
         self.register = {}
         self.attach_methods = {
             "post_mlp_residual": self._attach_post_mlp_residual,
@@ -35,13 +36,15 @@ class Timesformer:
     def attach(self, attachment_point, layer, sae=None):
         if attachment_point not in self.attach_methods:
             raise NotImplementedError(
-                f"Attachment point '{attachment_point}' not implemented for Timesformer")
+                f"Attachment point '{attachment_point}' not implemented for Timesformer"
+            )
         self.attach_methods[attachment_point](layer, sae)
         self.register[f"{attachment_point}_{layer}"] = []
 
     def _attach_post_mlp_residual(self, layer, sae):
         self.model.encoder.layer[layer] = _LayerPostMlpResidual(
-            self.model.encoder.layer[layer], sae, layer, self.register)
+            self.model.encoder.layer[layer], sae, layer, self.register
+        )
 
 
 class _LayerPostMlpResidual(nn.Module):
@@ -52,8 +55,9 @@ class _LayerPostMlpResidual(nn.Module):
         self.layer_idx = layer_idx
         self.register = register
 
-    def forward(self, hidden_states: torch.Tensor, *args, **kwargs
-                ) -> Union[Tuple[torch.Tensor, ...], torch.Tensor]:
+    def forward(
+        self, hidden_states: torch.Tensor, *args, **kwargs
+    ) -> Union[Tuple[torch.Tensor, ...], torch.Tensor]:
         kwargs.pop("head_mask", None)
         outputs = self.base_layer(hidden_states, *args, **kwargs)
         if isinstance(outputs, torch.Tensor):

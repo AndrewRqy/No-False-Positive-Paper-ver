@@ -7,17 +7,17 @@ This turns a handful of those into short clips so the dataset / NFP test can be 
 
 With --annotate (default on) each frame is overlaid with: the frame index, the per-frame
 speed and direction (two of the five tau variables the NFP test correlates against), and a
-circle marking the ball-containing position — i.e. exactly the signal the test tracks.
+circle marking the ball-containing position - i.e. exactly the signal the test tracks.
 
 Usage (from repo root):
     python analysis/make_nfp_demo.py --nfp_dir data/output/nfp --out_dir demo/nfp --n 10
 """
+
 import argparse
 import json
 from pathlib import Path
 
 import cv2
-
 
 N_FRAMES = 16
 
@@ -26,7 +26,7 @@ def load_frames(vdir):
     frames = []
     for i in range(N_FRAMES):
         f = vdir / f"rgba_{i:05d}.png"
-        img = cv2.imread(str(f))                      # BGR uint8
+        img = cv2.imread(str(f))  # BGR uint8
         if img is None:
             raise FileNotFoundError(f"missing frame {f}")
         frames.append(img)
@@ -46,10 +46,26 @@ def annotate(frames, meta):
         im = img.copy()
         rec = traj[i] if i < len(traj) else {}
         tau = rec.get("tau", {})
-        cv2.putText(im, f"{vid}  frame {i:02d}/15", (5, 18),
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.45, (255, 255, 255), 1, cv2.LINE_AA)
-        cv2.putText(im, f"speed={tau.get('speed', 0):.2f}  dir={tau.get('direction', 0):.2f}",
-                    (5, 214), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (0, 255, 255), 1, cv2.LINE_AA)
+        cv2.putText(
+            im,
+            f"{vid}  frame {i:02d}/15",
+            (5, 18),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.45,
+            (255, 255, 255),
+            1,
+            cv2.LINE_AA,
+        )
+        cv2.putText(
+            im,
+            f"speed={tau.get('speed', 0):.2f}  dir={tau.get('direction', 0):.2f}",
+            (5, 214),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.45,
+            (0, 255, 255),
+            1,
+            cv2.LINE_AA,
+        )
         out.append(im)
     return out
 
@@ -71,6 +87,7 @@ def write_mp4(frames, path, fps):
 
 def write_gif(frames, path, fps):
     import imageio.v2 as imageio
+
     rgb = [cv2.cvtColor(f, cv2.COLOR_BGR2RGB) for f in frames]
     imageio.mimsave(str(path), rgb, duration=1.0 / fps, loop=0)
 
@@ -107,23 +124,37 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--nfp_dir", default="data/output/nfp")
     ap.add_argument("--out_dir", default="demo/nfp")
-    ap.add_argument("--n", type=int, default=10, help="number of demo videos (ignored if --ids given)")
-    ap.add_argument("--ids", nargs="*", default=None,
-                    help="explicit video dir names (e.g. v02460 v01394); overrides --n")
+    ap.add_argument(
+        "--n", type=int, default=10, help="number of demo videos (ignored if --ids given)"
+    )
+    ap.add_argument(
+        "--ids",
+        nargs="*",
+        default=None,
+        help="explicit video dir names (e.g. v02460 v01394); overrides --n",
+    )
     ap.add_argument("--fps", type=int, default=8)
     ap.add_argument("--scale", type=int, default=2, help="upscale factor (nearest-neighbor)")
-    ap.add_argument("--annotate", action="store_true",
-                    help="overlay frame index + speed/direction TEXT (no ball marker); raw frames by default")
-    ap.add_argument("--name_by_profile", action="store_true",
-                    help="prefix output filenames with profile_type + max speed (self-documenting)")
+    ap.add_argument(
+        "--annotate",
+        action="store_true",
+        help="overlay frame index + speed/direction TEXT (no ball marker); raw frames by default",
+    )
+    ap.add_argument(
+        "--name_by_profile",
+        action="store_true",
+        help="prefix output filenames with profile_type + max speed (self-documenting)",
+    )
     ap.add_argument("--no-gif", dest="gif", action="store_false")
     args = ap.parse_args()
 
     out = Path(args.out_dir)
     out.mkdir(parents=True, exist_ok=True)
     dirs = pick_dirs(args.nfp_dir, args.n, args.ids)
-    print(f"Writing {len(dirs)} demo clips -> {out}  (fps={args.fps}, scale={args.scale}, "
-          f"annotate={args.annotate})")
+    print(
+        f"Writing {len(dirs)} demo clips -> {out}  (fps={args.fps}, scale={args.scale}, "
+        f"annotate={args.annotate})"
+    )
     manifest = []
     for vdir in dirs:
         meta, pt, mean_s, max_s, ons = video_info(vdir)
@@ -137,20 +168,26 @@ def main():
         if args.gif:
             write_gif(frames, out / f"{base}.gif", args.fps)
         manifest.append((base, vdir.name, pt, mean_s, max_s, ons, len(meta.get("trajectory", []))))
-        print(f"  {vdir.name}  profile={pt:14s} mean_spd={mean_s:.2f} max_spd={max_s:.2f} "
-              f"on_screen={ons}/{len(meta.get('trajectory', []))} -> {base}")
+        print(
+            f"  {vdir.name}  profile={pt:14s} mean_spd={mean_s:.2f} max_spd={max_s:.2f} "
+            f"on_screen={ons}/{len(meta.get('trajectory', []))} -> {base}"
+        )
 
     # self-documenting manifest of the demo set
-    lines = ["# NFP demo clips\n",
-             "Each clip is the 16 frames of one ball video (MP4 + GIF). `speed` is in m/s; "
-             "`profile_type` is the motion profile (constant = linear/steady; turn/sinusoidal/"
-             "back_and_forth = non-linear path; accel/decel/slow_fast_slow = non-linear speed). "
-             "`on_screen` is how many of the 16 frames contain the ball — category demos are kept "
-             "fully on-screen; clips tagged `_offscreen` deliberately show the ball leaving frame.\n",
-             "| file | video | profile_type | mean speed | max speed | on_screen |",
-             "|---|---|---|---|---|---|"]
+    lines = [
+        "# NFP demo clips\n",
+        "Each clip is the 16 frames of one ball video (MP4 + GIF). `speed` is in m/s; "
+        "`profile_type` is the motion profile (constant = linear/steady; turn/sinusoidal/"
+        "back_and_forth = non-linear path; accel/decel/slow_fast_slow = non-linear speed). "
+        "`on_screen` is how many of the 16 frames contain the ball — category demos are kept "
+        "fully on-screen; clips tagged `_offscreen` deliberately show the ball leaving frame.\n",
+        "| file | video | profile_type | mean speed | max speed | on_screen |",
+        "|---|---|---|---|---|---|",
+    ]
     for base, vid, pt, mean_s, max_s, ons, total in sorted(manifest, key=lambda r: -r[4]):
-        lines.append(f"| `{base}.mp4` / `.gif` | {vid} | {pt} | {mean_s:.2f} | {max_s:.2f} | {ons}/{total} |")
+        lines.append(
+            f"| `{base}.mp4` / `.gif` | {vid} | {pt} | {mean_s:.2f} | {max_s:.2f} | {ons}/{total} |"
+        )
     (out / "manifest.md").write_text("\n".join(lines) + "\n")
     print(f"Done. Wrote {out / 'manifest.md'}")
 

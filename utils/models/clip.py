@@ -3,17 +3,20 @@ import torch
 import torch.nn as nn
 from typing import Optional, Tuple
 
+
 class Clip:
     def __init__(self, model_name, device):
         self.device = device
-        self.model = CLIPVisionModelWithProjection.from_pretrained(f"openai/{model_name}").to(device)
+        self.model = CLIPVisionModelWithProjection.from_pretrained(f"openai/{model_name}").to(
+            device
+        )
         self.processor = AutoProcessor.from_pretrained(f"openai/{model_name}")
         self.register = {}
         self.attach_methods = {
-            'in_mlp': self._attach_in_mlp,
-            'post_mlp': self._attach_post_mlp,
-            'post_mlp_residual': self._attach_post_mlp_residual,
-            'post_projection': self._attach_post_projection,
+            "in_mlp": self._attach_in_mlp,
+            "post_mlp": self._attach_post_mlp,
+            "post_mlp_residual": self._attach_post_mlp_residual,
+            "post_projection": self._attach_post_projection,
         }
 
     def encode(self, inputs):
@@ -28,7 +31,7 @@ class Clip:
     def attach(self, attachment_point, layer, sae=None):
         if attachment_point in self.attach_methods:
             self.attach_methods[attachment_point](layer, sae)
-            self.register[f'{attachment_point}_{layer}'] = []
+            self.register[f"{attachment_point}_{layer}"] = []
         else:
             raise NotImplementedError(f"Attachment point {attachment_point} not implemented")
 
@@ -54,6 +57,7 @@ class Clip:
             self.register,
         )
 
+
 class CLIPProjectionLayer(nn.Module):
     def __init__(self, projector, sae, layer, register):
         super().__init__()
@@ -66,11 +70,12 @@ class CLIPProjectionLayer(nn.Module):
         outputs = self.projector(inputs)
         if self.sae is not None:
             outputs = self.sae.encode(outputs)
-            self.register[f'post_projection_{self.layer}'].append(outputs.detach().cpu())
+            self.register[f"post_projection_{self.layer}"].append(outputs.detach().cpu())
             outputs = self.sae.decode(outputs)
         else:
-            self.register[f'post_projection_{self.layer}'].append(outputs.detach().cpu())
+            self.register[f"post_projection_{self.layer}"].append(outputs.detach().cpu())
         return outputs
+
 
 class CLIPEncoderLayerPostMlpResidual(nn.Module):
     def __init__(self, base, sae, layer, register):
@@ -110,10 +115,10 @@ class CLIPEncoderLayerPostMlpResidual(nn.Module):
 
         if self.sae is not None:
             hidden_states = self.sae.encode(hidden_states)
-            self.register[f'post_mlp_residual_{self.layer}'].append(hidden_states.detach().cpu())
+            self.register[f"post_mlp_residual_{self.layer}"].append(hidden_states.detach().cpu())
             hidden_states = self.sae.decode(hidden_states)
         else:
-            self.register[f'post_mlp_residual_{self.layer}'].append(hidden_states.detach().cpu())
+            self.register[f"post_mlp_residual_{self.layer}"].append(hidden_states.detach().cpu())
 
         outputs = (hidden_states,)
 

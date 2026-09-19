@@ -1,4 +1,5 @@
 """Encode video clips using DINOv2 (max-pooled over frames) for monosemanticity metric."""
+
 import torch
 import os
 import argparse
@@ -45,8 +46,13 @@ if __name__ == "__main__":
         inputs = processor(images=all_frames, return_tensors="pt")
         return inputs, clip_sizes
 
-    dl = DataLoader(ds, batch_size=args.batch_size, shuffle=False,
-                    num_workers=args.num_workers, collate_fn=collate_fn)
+    dl = DataLoader(
+        ds,
+        batch_size=args.batch_size,
+        shuffle=False,
+        num_workers=args.num_workers,
+        collate_fn=collate_fn,
+    )
 
     embeddings = []
     for inputs, clip_sizes in tqdm.tqdm(dl, desc="Encoding clips"):

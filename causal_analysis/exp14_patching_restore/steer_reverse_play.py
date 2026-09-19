@@ -1,5 +1,4 @@
-"""
-Experiment D3 — reverse-play mediation (arrow-of-time test).
+"""Reverse-play mediation (Experiment D3) - arrow-of-time test.
 
 Corruption that isolates ONE temporal property: play the video backward. Direction
 percepts invert; appearance and speed statistics are identical (same frames, same
@@ -19,13 +18,15 @@ validation list, identical to expB2/expC1. Model MCG-NJU/videomae-base-finetuned
 SAE local_runs/sae/ae.pt (layer-11 post-MLP, dict 6144); NFP flags = Bonferroni 0.05/6144
 on local_runs/nfp_results/sae_nfp.pt; static pool = finite t, max|t| < 2.
 
-Usage (from sae-for-vlm/):
-  python analysis/steer_reverse_play.py --per_class 12
+Usage (from repo root):
+  python -m causal_analysis.exp14_patching_restore.steer_reverse_play --per_class 12
 """
+
 import argparse
 import json
 import sys
 from pathlib import Path
+from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
 import torch
@@ -37,26 +38,43 @@ from dictionary_learning import AutoEncoder
 from causal_analysis.common.steer_ssv2_logits import SteerLayer, ssv2_collate
 from causal_analysis.common.steer_pair_screen import ItemFrames
 
-TAU = ["speed", "vel_x", "vel_y", "accel_mag", "direction"]
-DIR_PAIRS = [
+TAU: List[str] = ["speed", "vel_x", "vel_y", "accel_mag", "direction"]
+DIR_PAIRS: List[Tuple[str, str, str]] = [
     ("push_lr", "Pushing [something] from left to right", "Pushing [something] from right to left"),
     ("pull_lr", "Pulling [something] from left to right", "Pulling [something] from right to left"),
-    ("cam_lr",  "Turning the camera left while filming [something]",
-                "Turning the camera right while filming [something]"),
+    (
+        "cam_lr",
+        "Turning the camera left while filming [something]",
+        "Turning the camera right while filming [something]",
+    ),
     ("move_ud", "Moving [something] up", "Moving [something] down"),
-    ("cam_ud",  "Turning the camera upwards while filming [something]",
-                "Turning the camera downwards while filming [something]"),
+    (
+        "cam_ud",
+        "Turning the camera upwards while filming [something]",
+        "Turning the camera downwards while filming [something]",
+    ),
 ]
 
 
-def main():
+def main() -> None:
+    """Run the D3 reverse-play mediation experiment and write results as JSON.
+
+    For each of the 5 direction pairs, reverses frame order (which inverts the direction
+    percept while preserving appearance and speed statistics), measures how far reversal
+    moves the prediction toward the opposite class, and tests whether patching each feature
+    set's forward-run activations into the reversed run restores the forward percept.
+    Also accumulates the per-feature activation change under reversal and reports its
+    median by feature tag (the tag signature).
+    """
     ap = argparse.ArgumentParser()
     ap.add_argument("--model_name", default="MCG-NJU/videomae-base-finetuned-ssv2")
     ap.add_argument("--sae_path", default="local_runs/sae/ae.pt")
     ap.add_argument("--nfp_results", default="local_runs/nfp_results/sae_nfp.pt")
     ap.add_argument("--ssv2_videos", default="../SSv2/videos")
-    ap.add_argument("--ssv2_val_json",
-                    default="../SSv2/raw/20bn-something-something-download-package-labels/labels/validation.json")
+    ap.add_argument(
+        "--ssv2_val_json",
+        default="../SSv2/raw/20bn-something-something-download-package-labels/labels/validation.json",
+    )
     ap.add_argument("--layer", default=11, type=int)
     ap.add_argument("--per_class", default=12, type=int)
     ap.add_argument("--static_t_bar", default=2.0, type=float)
@@ -69,51 +87,94 @@ def main():
 
     clf = VideoMAEForVideoClassification.from_pretrained(args.model_name).to(device).eval()
     label2idx = {v: int(k) for k, v in clf.config.id2label.items()}
-    sae = AutoEncoder.from_pretrained(args.sae_path, device=device); sae.eval()
+    sae = AutoEncoder.from_pretrained(args.sae_path, device=device)
+    sae.eval()
     steer = SteerLayer(clf.videomae.encoder.layer[args.layer], sae).to(device)
     clf.videomae.encoder.layer[args.layer] = steer
     proc = VideoMAEImageProcessor.from_pretrained(args.model_name)
 
     nfp = torch.load(args.nfp_results, map_location="cpu")
-    p_all = nfp["p_val"].numpy(); t_all = nfp["t_stat"].numpy()
+    p_all = nfp["p_val"].numpy()
+    t_all = nfp["t_stat"].numpy()
     bonf = 0.05 / p_all.shape[0]
     sig = [int(i) for i in np.where((p_all < bonf).any(1))[0]]
     dom = {i: TAU[int(np.argmax(np.abs(t_all[i])))] for i in sig}
     finite = np.isfinite(t_all).all(1)
-    low_t = (np.abs(np.nan_to_num(t_all, nan=1e9)).max(1) < args.static_t_bar)
+    low_t = np.abs(np.nan_to_num(t_all, nan=1e9)).max(1) < args.static_t_bar
     static_pool = [int(i) for i in np.where(finite & low_t)[0] if i not in set(sig)]
     rng = np.random.RandomState(args.seed + 7)
-    rnd85 = sorted(rng.choice([k for k in range(sae.dict_size) if k not in set(sig)],
-                              85, replace=False))
+    rnd85 = sorted(
+        rng.choice([k for k in range(sae.dict_size) if k not in set(sig)], 85, replace=False)
+    )
     stat85 = sorted(rng.choice(static_pool, 85, replace=False))
-    sets = [("NFP-85", torch.tensor(sorted(sig))),
-            ("random-85", torch.tensor(rnd85)),
-            ("static-85", torch.tensor(stat85)),
-            ("ALL-6144", torch.arange(sae.dict_size))]
+    sets = [
+        ("NFP-85", torch.tensor(sorted(sig))),
+        ("random-85", torch.tensor(rnd85)),
+        ("static-85", torch.tensor(stat85)),
+        ("ALL-6144", torch.arange(sae.dict_size)),
+    ]
 
     val = json.load(open(args.ssv2_val_json))
-    vrng = np.random.RandomState(args.seed + 1); vrng.shuffle(val)
+    vrng = np.random.RandomState(args.seed + 1)
+    vrng.shuffle(val)
     by_tmpl = {}
     for it in val:
         by_tmpl.setdefault(it.get("template", ""), []).append(it)
 
-    def cache_of(items):
-        dl = DataLoader(ItemFrames(args.ssv2_videos, items), batch_size=args.batch_size,
-                        shuffle=False, num_workers=0, collate_fn=ssv2_collate(proc))
+    def cache_of(items: List[Dict[str, Any]]) -> List[torch.Tensor]:
+        """Batch a list of SSv2 items into cached pixel-value tensors.
+
+        Args:
+            items: SSv2 validation records to load and preprocess.
+
+        Returns:
+            One pixel-value tensor per batch, in dataloader order.
+        """
+        dl = DataLoader(
+            ItemFrames(args.ssv2_videos, items),
+            batch_size=args.batch_size,
+            shuffle=False,
+            num_workers=0,
+            collate_fn=ssv2_collate(proc),
+        )
         return [b[0]["pixel_values"] for b in dl]
 
-    def probs(cache, patch=None):
+    def probs(
+        cache: List[torch.Tensor],
+        patch: Optional[Tuple[torch.Tensor, List[torch.Tensor]]] = None,
+    ) -> np.ndarray:
+        """Run the classifier over cached batches and return softmax probabilities.
+
+        Args:
+            cache: Per-batch pixel-value tensors.
+            patch: Optional (feature-index tensor, per-batch forward values) installed at
+                the steered layer for each batch, or None for an unpatched pass.
+
+        Returns:
+            A [n_videos, n_classes] array of class probabilities.
+        """
         outs = []
         for bi, pv in enumerate(cache):
             if patch is not None:
-                steer.patch_idx = patch[0]; steer.patch_vals = patch[1][bi]
+                steer.patch_idx = patch[0]
+                steer.patch_vals = patch[1][bi]
             with torch.no_grad():
                 outs.append(torch.softmax(clf(pixel_values=pv.to(device)).logits, -1).cpu())
             steer.patch_idx = steer.patch_vals = None
         return torch.cat(outs, 0).numpy()
 
-    def capture(cache, idx):
-        steer.record_tokens_idx = idx; steer.captured_tokens = []
+    def capture(cache: List[torch.Tensor], idx: torch.Tensor) -> List[torch.Tensor]:
+        """Capture forward-run token activations for the chosen features, per batch.
+
+        Args:
+            cache: Per-batch pixel-value tensors to run through the model.
+            idx: Feature indices to record at the steered layer.
+
+        Returns:
+            Per-batch tensors of recorded token activations, aligned to `cache`.
+        """
+        steer.record_tokens_idx = idx
+        steer.captured_tokens = []
         for pv in cache:
             with torch.no_grad():
                 clf(pixel_values=pv.to(device))
@@ -121,47 +182,68 @@ def main():
         vals, i = [], 0
         allv = torch.cat(steer.captured_tokens, 0)
         for pv in cache:
-            vals.append(allv[i:i + pv.shape[0]]); i += pv.shape[0]
+            vals.append(allv[i : i + pv.shape[0]])
+            i += pv.shape[0]
         return vals
 
     # (c) tag signature accumulator: per-feature |mean act fwd - mean act rev|
-    act_fwd_sum = np.zeros(sae.dict_size); act_rev_sum = np.zeros(sae.dict_size); n_clips = 0
+    act_fwd_sum = np.zeros(sae.dict_size)
+    act_rev_sum = np.zeros(sae.dict_size)
+    n_clips = 0
 
     results = {"pairs": [], "sets": [n for n, _ in sets]}
     agg = {"fwd": [], "rev": [], **{n: [] for n, _ in sets}}
     for key, pos_l, neg_l in DIR_PAIRS:
         cp, cn = label2idx.get(pos_l, -1), label2idx.get(neg_l, -1)
-        if cp < 0 or cn < 0 or min(len(by_tmpl.get(pos_l, [])), len(by_tmpl.get(neg_l, []))) < args.per_class:
+        if (
+            cp < 0
+            or cn < 0
+            or min(len(by_tmpl.get(pos_l, [])), len(by_tmpl.get(neg_l, []))) < args.per_class
+        ):
             continue
         rec = {"key": key, "sides": {}}
         for side, cls_l, own, other in [("pos", pos_l, cp, cn), ("neg", neg_l, cn, cp)]:
             cache = cache_of(by_tmpl[cls_l][: args.per_class])
-            cache_rev = [pv.flip(1) for pv in cache]     # frame order reversed
+            cache_rev = [pv.flip(1) for pv in cache]  # frame order reversed
 
             steer.enabled = False
             # mean-pooled activation signature (record mode)
-            steer.record = True; steer.captured = []
+            steer.record = True
+            steer.captured = []
             P_fwd = probs(cache)
-            A_fwd = torch.cat(steer.captured, 0).numpy(); steer.captured = []
+            A_fwd = torch.cat(steer.captured, 0).numpy()
+            steer.captured = []
             P_rev = probs(cache_rev)
-            A_rev = torch.cat(steer.captured, 0).numpy(); steer.record = False
-            act_fwd_sum += A_fwd.sum(0); act_rev_sum += A_rev.sum(0); n_clips += A_fwd.shape[0]
+            A_rev = torch.cat(steer.captured, 0).numpy()
+            steer.record = False
+            act_fwd_sum += A_fwd.sum(0)
+            act_rev_sum += A_rev.sum(0)
+            n_clips += A_fwd.shape[0]
 
-            def lo(P):
+            def lo(P: np.ndarray) -> float:
+                """Own-vs-other log-odds averaged over the side's clips."""
                 return float(np.mean(np.log(P[:, own] + 1e-12) - np.log(P[:, other] + 1e-12)))
-            row = {"fwd": lo(P_fwd), "rev": lo(P_rev),
-                   "rev_flip_rate": float((P_rev[:, other] > P_rev[:, own]).mean())}
-            agg["fwd"].append(row["fwd"]); agg["rev"].append(row["rev"])
+
+            row = {
+                "fwd": lo(P_fwd),
+                "rev": lo(P_rev),
+                "rev_flip_rate": float((P_rev[:, other] > P_rev[:, own]).mean()),
+            }
+            agg["fwd"].append(row["fwd"])
+            agg["rev"].append(row["rev"])
             for name, idx in sets:
                 fvals = capture(cache, idx)
                 P_r = probs(cache_rev, patch=(idx, fvals))
                 row[name] = lo(P_r)
                 agg[name].append(row[name])
-            rec["sides"][side] = {k: (round(v, 3) if isinstance(v, float) else v)
-                                  for k, v in row.items()}
-        print(f"  {key:<9} fwd LO={np.mean([rec['sides'][s]['fwd'] for s in rec['sides']]):+.2f} "
-              f"rev={np.mean([rec['sides'][s]['rev'] for s in rec['sides']]):+.2f} "
-              f"rev-flip={np.mean([rec['sides'][s]['rev_flip_rate'] for s in rec['sides']]):.2f}")
+            rec["sides"][side] = {
+                k: (round(v, 3) if isinstance(v, float) else v) for k, v in row.items()
+            }
+        print(
+            f"  {key:<9} fwd LO={np.mean([rec['sides'][s]['fwd'] for s in rec['sides']]):+.2f} "
+            f"rev={np.mean([rec['sides'][s]['rev'] for s in rec['sides']]):+.2f} "
+            f"rev-flip={np.mean([rec['sides'][s]['rev_flip_rate'] for s in rec['sides']]):.2f}"
+        )
         results["pairs"].append(rec)
 
     f, r = np.mean(agg["fwd"]), np.mean(agg["rev"])

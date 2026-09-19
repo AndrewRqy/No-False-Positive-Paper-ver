@@ -1,11 +1,13 @@
-"""
-Compute and save NFP statistics on the v2 dataset for the main SAE, in the same format
+"""Save NFP Stats v2 - main SAE on the v2 dataset.
+
+Computes and saves NFP statistics on the v2 dataset for the main SAE, in the same format
 as sae_nfp.pt ({t_stat, p_val} [6144, 5]), so every steering script can take
 --nfp_results sae_nfp_v2.pt and run on the v2 flag set (109 features).
 
-Usage (from sae-for-vlm/):
-  python analysis/save_nfp_stats_v2.py
+Usage:
+  python -m nfp_testing.save_nfp_stats_v2
 """
+
 import sys
 from pathlib import Path
 
@@ -17,7 +19,14 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from dictionary_learning import AutoEncoder
 
 
-def main():
+def main() -> None:
+    """Encode cached v2 ball activations and save the NFP t/p statistics.
+
+    Loads the v2 raw ball activations, encodes them through the main SAE,
+    computes the within-video covariance with each tau, runs a one-sample t-test
+    with Bonferroni correction, and saves the statistics in the sae_nfp.pt
+    format for downstream steering scripts.
+    """
     d = torch.load("local_runs/nfp_results/ball_raw_acts_v2.pt", map_location="cpu")
     ball, tau, mask = d["ball"].float(), d["tau"].float(), d["mask"]
     sae = AutoEncoder.from_pretrained("local_runs/sae/ae.pt", device="cuda:0")
@@ -30,14 +39,21 @@ def main():
     tau_c = tau - tau.mean(1, keepdim=True)
     C = torch.einsum("btd,btk->bdk", psi_c, tau_c).numpy() / T
     D = C.shape[1]
-    t = np.zeros((D, 5), np.float32); p = np.ones_like(t)
+    t = np.zeros((D, 5), np.float32)
+    p = np.ones_like(t)
     for k in range(5):
         t[:, k], p[:, k] = stats.ttest_1samp(C[:, :, k], 0.0)
     sig = ((p < 0.05 / D).any(1)).sum()
     print(f"v2 flags: {sig} features")
-    torch.save({"t_stat": torch.from_numpy(t), "p_val": torch.from_numpy(p),
-                "tau": tau, "tau_keys": ["speed", "vel_x", "vel_y", "accel_mag", "direction"]},
-               "local_runs/nfp_results/sae_nfp_v2.pt")
+    torch.save(
+        {
+            "t_stat": torch.from_numpy(t),
+            "p_val": torch.from_numpy(p),
+            "tau": tau,
+            "tau_keys": ["speed", "vel_x", "vel_y", "accel_mag", "direction"],
+        },
+        "local_runs/nfp_results/sae_nfp_v2.pt",
+    )
     print("saved -> local_runs/nfp_results/sae_nfp_v2.pt")
 
 

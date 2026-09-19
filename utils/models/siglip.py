@@ -12,8 +12,8 @@ class Siglip:
         self.processor = AutoProcessor.from_pretrained(f"google/{model_name}")
         self.register = {}
         self.attach_methods = {
-            'post_mlp_residual': self._attach_post_mlp_residual,
-            'post_projection': self._attach_post_projection,
+            "post_mlp_residual": self._attach_post_mlp_residual,
+            "post_projection": self._attach_post_projection,
         }
         self.sae = None
         self.layer = None
@@ -26,17 +26,17 @@ class Siglip:
 
         if self.sae is not None:
             pooled_output = self.sae.encode(pooled_output)
-            self.register[f'post_projection_{self.layer}'].append(pooled_output.detach().cpu())
+            self.register[f"post_projection_{self.layer}"].append(pooled_output.detach().cpu())
             pooled_output = self.sae.decode(pooled_output)
         elif self.layer is not None:
-            self.register[f'post_projection_{self.layer}'].append(pooled_output.detach().cpu())
+            self.register[f"post_projection_{self.layer}"].append(pooled_output.detach().cpu())
 
         return pooled_output
 
     def attach(self, attachment_point, layer, sae=None):
         if attachment_point in self.attach_methods:
             self.attach_methods[attachment_point](layer, sae)
-            self.register[f'{attachment_point}_{layer}'] = []
+            self.register[f"{attachment_point}_{layer}"] = []
         else:
             raise NotImplementedError(f"Attachment point {attachment_point} not implemented")
 
@@ -89,10 +89,10 @@ class SiglipEncoderLayerPostMlpResidual(nn.Module):
 
         if self.sae is not None:
             hidden_states = self.sae.encode(hidden_states)
-            self.register[f'post_mlp_residual_{self.layer}'].append(hidden_states.detach().cpu())
+            self.register[f"post_mlp_residual_{self.layer}"].append(hidden_states.detach().cpu())
             hidden_states = self.sae.decode(hidden_states)
         else:
-            self.register[f'post_mlp_residual_{self.layer}'].append(hidden_states.detach().cpu())
+            self.register[f"post_mlp_residual_{self.layer}"].append(hidden_states.detach().cpu())
 
         outputs = (hidden_states,)
 

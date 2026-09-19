@@ -17,10 +17,11 @@ Output: --output_path .pt with {feat_mean[N,6144], feat_max[N,6144],
 onscreen[N], video_ids}. Mirrors nfp_test.py exactly (same model/layer/attachment,
 same ball-tracking extraction and off-screen zeroing).
 
-Usage (from sae-for-vlm/):
+Usage (from repo root):
   python analysis/dump_nfp_feature_acts.py --dataset_dir data/output/nfp \
       --sae_path local_runs/sae/ae.pt --output_path local_runs/nfp_results/sae_feat_acts.pt
 """
+
 import argparse
 import sys
 from pathlib import Path
@@ -33,8 +34,11 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from dictionary_learning import AutoEncoder
 from utils.models.videomae import VideoMAE
 from nfp_testing.nfp_test import (
-    NFPDataset, make_collate, extract_ball_tracking,
-    N_TEMPORAL, N_SPATIAL,
+    NFPDataset,
+    make_collate,
+    extract_ball_tracking,
+    N_TEMPORAL,
+    N_SPATIAL,
 )
 
 
@@ -67,30 +71,35 @@ def main():
     sae.eval()
 
     ds = NFPDataset(Path(args.dataset_dir), tau_mode="first_frame")
-    dl = DataLoader(ds, batch_size=args.batch_size, shuffle=False,
-                    num_workers=args.num_workers,
-                    collate_fn=make_collate(model.processor))
+    dl = DataLoader(
+        ds,
+        batch_size=args.batch_size,
+        shuffle=False,
+        num_workers=args.num_workers,
+        collate_fn=make_collate(model.processor),
+    )
     print(f"Dataset: {len(ds)} videos")
 
     feat_mean_chunks, feat_max_chunks, onscreen_chunks, ids = [], [], [], []
     for inputs, tau, ball_tokens, video_ids in tqdm(dl, desc="Activations"):
         model.encode(inputs)
-        acts = model.register[hook_key][0]                      # [B, 1568, 768]
+        acts = model.register[hook_key][0]  # [B, 1568, 768]
         B = acts.shape[0]
         acts_spatial = acts.view(B, N_TEMPORAL, N_SPATIAL, -1)
 
         ball_acts, mask = extract_ball_tracking(
-            acts_spatial.to(device), ball_tokens.to(device))    # [B,8,768], [B,8]
+            acts_spatial.to(device), ball_tokens.to(device)
+        )  # [B,8,768], [B,8]
 
         with torch.no_grad():
             B2, T, Dh = ball_acts.shape
             feats = sae.encode(ball_acts.reshape(B2 * T, Dh)).reshape(B2, T, -1)
-        m = mask.to(feats.device).unsqueeze(-1).float()         # [B,8,1]
-        feats = feats * m                                       # zero off-screen
+        m = mask.to(feats.device).unsqueeze(-1).float()  # [B,8,1]
+        feats = feats * m  # zero off-screen
 
         cnt = mask.sum(dim=1).clamp(min=1).to(feats.device).float().unsqueeze(-1)  # [B,1]
-        feat_mean = (feats.sum(dim=1) / cnt).cpu()              # [B,6144] masked mean
-        feat_max = feats.max(dim=1).values.cpu()               # [B,6144]
+        feat_mean = (feats.sum(dim=1) / cnt).cpu()  # [B,6144] masked mean
+        feat_max = feats.max(dim=1).values.cpu()  # [B,6144]
 
         feat_mean_chunks.append(feat_mean)
         feat_max_chunks.append(feat_max)
@@ -98,9 +107,9 @@ def main():
         ids.extend(video_ids)
 
     out = {
-        "feat_mean": torch.cat(feat_mean_chunks, 0),   # [N, 6144]
-        "feat_max":  torch.cat(feat_max_chunks, 0),    # [N, 6144]
-        "onscreen":  torch.cat(onscreen_chunks, 0),    # [N]
+        "feat_mean": torch.cat(feat_mean_chunks, 0),  # [N, 6144]
+        "feat_max": torch.cat(feat_max_chunks, 0),  # [N, 6144]
+        "onscreen": torch.cat(onscreen_chunks, 0),  # [N]
         "video_ids": ids,
     }
     outp = Path(args.output_path)

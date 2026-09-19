@@ -1,16 +1,33 @@
-"""Extract video-level DINOv2 SAE activations (mean-pooled over frames) for monosemanticity metric."""
+"""DINOv2 SAE Video Encoder - extract video-level SAE activations for the monosemanticity metric.
+
+Runs a DINOv2 backbone followed by a trained sparse autoencoder over every frame of each
+SSv2 video, then mean-pools the SAE feature vectors across a video's frames to produce one
+activation vector per video. The video-level activations are streamed to disk in chunks and
+later consumed by the monosemanticity metric.
+
+Usage:
+    python -m nfp_testing.ms.encode_dino_sae_videos --output_dir OUT --sae_path SAE \
+        --data_path DATA --split val
+"""
+
 import torch
 import os
 import argparse
 import tqdm
 from pathlib import Path
+from typing import Any, List, Tuple
 from utils.datasets.ssv2 import SSv2Dataset
 from torch.utils.data import DataLoader
 from transformers import AutoImageProcessor, Dinov2Model
 from dictionary_learning import AutoEncoder
 
 
-def get_args_parser():
+def get_args_parser() -> argparse.ArgumentParser:
+    """Build the command-line argument parser for the video-level SAE encoder.
+
+    Returns:
+        The configured argument parser.
+    """
     parser = argparse.ArgumentParser("Encode DINOv2 SAE activations at video level")
     parser.add_argument("--output_dir", required=True)
     parser.add_argument("--sae_path", required=True)
@@ -36,7 +53,18 @@ if __name__ == "__main__":
 
     ds = SSv2Dataset(args.data_path, split=args.split)
 
-    def collate_fn(batch):
+    def collate_fn(batch: List[Tuple[List[Any], Any]]) -> Tuple[Any, List[int]]:
+        """Flatten a batch of videos into a single processed frame tensor.
+
+        Args:
+            batch: List of ``(frames_list, label)`` pairs, one per video, where
+                ``frames_list`` holds the video's PIL frames.
+
+        Returns:
+            A tuple ``(inputs, n_frames)`` where ``inputs`` is the processor output for
+            all frames concatenated across videos and ``n_frames`` is the per-video frame
+            count (used to un-flatten and mean-pool back to video level).
+        """
         all_frames, n_frames = [], []
         for frames_list, _ in batch:
             all_frames.extend(frames_list)
@@ -44,8 +72,13 @@ if __name__ == "__main__":
         inputs = processor(images=all_frames, return_tensors="pt")
         return inputs, n_frames
 
-    dl = DataLoader(ds, batch_size=args.batch_size, shuffle=False,
-                    num_workers=args.num_workers, collate_fn=collate_fn)
+    dl = DataLoader(
+        ds,
+        batch_size=args.batch_size,
+        shuffle=False,
+        num_workers=args.num_workers,
+        collate_fn=collate_fn,
+    )
 
     buffer, save_count, total = [], 0, 0
 
@@ -58,7 +91,7 @@ if __name__ == "__main__":
         video_feats = []
         offset = 0
         for nf in n_frames:
-            video_feats.append(sae_feats[offset:offset + nf].mean(dim=0))
+            video_feats.append(sae_feats[offset : offset + nf].mean(dim=0))
             offset += nf
         buffer.append(torch.stack(video_feats).cpu())
         total += len(n_frames)

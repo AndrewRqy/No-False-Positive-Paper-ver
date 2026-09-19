@@ -30,13 +30,15 @@ TAU_KEYS = ["speed", "vel_x", "vel_y", "accel_mag", "direction"]
 
 def parse_args():
     p = argparse.ArgumentParser()
-    p.add_argument("--sae_path",     required=True)
-    p.add_argument("--matrices_path", required=True,
-                   help="matrices.pt from gen_synthetic_activations.py")
-    p.add_argument("--nfp_results",  required=True,
-                   help="synthetic_nfp.pt from nfp_test_synthetic.py")
-    p.add_argument("--alpha",        default=0.05, type=float)
-    p.add_argument("--device",       default="cpu")
+    p.add_argument("--sae_path", required=True)
+    p.add_argument(
+        "--matrices_path", required=True, help="matrices.pt from gen_synthetic_activations.py"
+    )
+    p.add_argument(
+        "--nfp_results", required=True, help="synthetic_nfp.pt from nfp_test_synthetic.py"
+    )
+    p.add_argument("--alpha", default=0.05, type=float)
+    p.add_argument("--device", default="cpu")
     return p.parse_args()
 
 
@@ -44,34 +46,33 @@ def main():
     args = parse_args()
 
     print(f"Loading SAE: {args.sae_path}")
-    sae = AutoEncoder.from_pretrained(args.sae_path,
-                                      device=torch.device(args.device))
+    sae = AutoEncoder.from_pretrained(args.sae_path, device=torch.device(args.device))
     enc_W = sae.encoder.weight.data.cpu().float()  # [F, 768]
     F, D = enc_W.shape
 
     print(f"Loading matrices: {args.matrices_path}")
     mat = torch.load(args.matrices_path, map_location="cpu")
-    W_tau    = mat["W_tau"].float()     # [5, 768] orthonormal rows
+    W_tau = mat["W_tau"].float()  # [5, 768] orthonormal rows
     W_static = mat["W_static"].float()  # [N_STATIC, 768] orthonormal rows
 
     print(f"Loading NFP results: {args.nfp_results}")
     nfp = torch.load(args.nfp_results, map_location="cpu")
     p_val = nfp["p_val"].numpy()  # [F, 5]
-    bonf  = args.alpha / F
+    bonf = args.alpha / F
 
     sig_any = (p_val < bonf).any(axis=1)  # [F]
-    sig_idx    = np.where(sig_any)[0]
+    sig_idx = np.where(sig_any)[0]
     nonsig_idx = np.where(~sig_any)[0]
 
     # Projection fraction: ||W_tau w_i||^2 / ||w_i||^2
     # W_tau has orthonormal rows, so P_{W_tau} = W_tau^T W_tau
     # ||P w_i||^2 = ||W_tau w_i||^2  (since P is symmetric idempotent)
-    proj_tau    = (enc_W @ W_tau.T)       # [F, 5]
-    proj_static = (enc_W @ W_static.T)    # [F, N_STATIC]
-    norm_sq     = (enc_W ** 2).sum(dim=1) + 1e-12  # [F]
+    proj_tau = enc_W @ W_tau.T  # [F, 5]
+    proj_static = enc_W @ W_static.T  # [F, N_STATIC]
+    norm_sq = (enc_W**2).sum(dim=1) + 1e-12  # [F]
 
-    frac_tau    = (proj_tau    ** 2).sum(dim=1) / norm_sq  # [F]
-    frac_static = (proj_static ** 2).sum(dim=1) / norm_sq  # [F]
+    frac_tau = (proj_tau**2).sum(dim=1) / norm_sq  # [F]
+    frac_static = (proj_static**2).sum(dim=1) / norm_sq  # [F]
 
     print(f"\n{'='*60}")
     print(f"Projection Fraction Metric  (Bonferroni p < {bonf:.2e})")
@@ -88,18 +89,22 @@ def main():
         ft = frac_tau[idx].numpy()
         fs = frac_static[idx].numpy()
         print(f"\n{label} ({n} features):")
-        print(f"  Proj frac in W_tau    : mean={ft.mean():.4f}  "
-              f"median={np.median(ft):.4f}  max={ft.max():.4f}")
-        print(f"  Proj frac in W_static : mean={fs.mean():.4f}  "
-              f"median={np.median(fs):.4f}  max={fs.max():.4f}")
+        print(
+            f"  Proj frac in W_tau    : mean={ft.mean():.4f}  "
+            f"median={np.median(ft):.4f}  max={ft.max():.4f}"
+        )
+        print(
+            f"  Proj frac in W_static : mean={fs.mean():.4f}  "
+            f"median={np.median(fs):.4f}  max={fs.max():.4f}"
+        )
         print(f"  Residual (noise+other): mean={(1-ft-fs).mean():.4f}")
 
     # Per-tau breakdown: proj fraction of features sig for that tau only
     print(f"\n--- Per-tau projection fraction (features sig for that tau) ---")
     print(f"{'Tau':<12} {'N_sig':>6} {'Mean frac_tau':>14} {'Mean frac_static':>17}")
     for k, name in enumerate(TAU_KEYS):
-        sig_k = (p_val[:, k] < bonf)
-        n_k   = sig_k.sum()
+        sig_k = p_val[:, k] < bonf
+        n_k = sig_k.sum()
         if n_k == 0:
             print(f"{name:<12} {0:>6}  (no significant features)")
             continue

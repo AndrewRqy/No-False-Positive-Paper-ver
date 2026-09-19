@@ -11,13 +11,20 @@ Each pair is marked clean (appearance otherwise matched, a single-frame model
 could not separate them) or confounded (the differing kinematic event also
 changes the object's end configuration, so appearance shifts too).
 """
+
 import json
 
-LABELS = json.load(open(
-    "../SSv2/raw/20bn-something-something-download-package-labels/labels/labels.json",
-    encoding="utf-8"))
-IDX2NAME = {int(i): n for n, i in LABELS.items()} if isinstance(LABELS, dict) \
+LABELS = json.load(
+    open(
+        "../SSv2/raw/20bn-something-something-download-package-labels/labels/labels.json",
+        encoding="utf-8",
+    )
+)
+IDX2NAME = (
+    {int(i): n for n, i in LABELS.items()}
+    if isinstance(LABELS, dict)
     else {i: n for i, n in enumerate(LABELS)}
+)
 
 # (a, b, key, concept, clean?)
 PAIRS = [
@@ -56,20 +63,35 @@ def main():
 
     clean = [p for p in PAIRS if p[4]]
     conf = [p for p in PAIRS if not p[4]]
-    for title, group in [("CLEAN single-concept (appearance matched)", clean),
-                         ("CONFOUNDED (kinematic event also shifts appearance)", conf)]:
+    for title, group in [
+        ("CLEAN single-concept (appearance matched)", clean),
+        ("CONFOUNDED (kinematic event also shifts appearance)", conf),
+    ]:
         print(f"\n=== {title} ({len(group)}) ===")
         for a, b, key, concept, _ in group:
-            print(f"  {key:16s} {concept:28s} [{a:3d}] {IDX2NAME[a][:34]:36s}| [{b:3d}] {IDX2NAME[b][:34]}")
+            print(
+                f"  {key:16s} {concept:28s} [{a:3d}] {IDX2NAME[a][:34]:36s}| [{b:3d}] {IDX2NAME[b][:34]}"
+            )
 
     from collections import Counter
+
     byc = Counter(p[3].split(":")[0] for p in PAIRS)
     print(f"\nby concept: " + ", ".join(f"{k} {v}" for k, v in byc.items()))
     print(f"clean single-concept pairs: {len(clean)}")
     print(f"+ confounded kinematic-event pairs: {len(conf)}  ->  total {len(PAIRS)}")
 
-    flat = [{"key": k, "concept": c, "clean": cl, "pos_idx": a, "neg_idx": b,
-             "pos": IDX2NAME[a], "neg": IDX2NAME[b]} for a, b, k, c, cl in PAIRS]
+    flat = [
+        {
+            "key": k,
+            "concept": c,
+            "clean": cl,
+            "pos_idx": a,
+            "neg_idx": b,
+            "pos": IDX2NAME[a],
+            "neg": IDX2NAME[b],
+        }
+        for a, b, k, c, cl in PAIRS
+    ]
     json.dump(flat, open("analysis/kinematic_pairs.json", "w"), indent=1)
     print(f"saved -> analysis/kinematic_pairs.json")
 

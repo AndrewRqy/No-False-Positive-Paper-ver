@@ -1,5 +1,5 @@
 """
-Build an oracle SAE — a positive control for the NFP test.
+Build an oracle SAE - a positive control for the NFP test.
 
 Injects linear probe directions for each of the 5 tau variables
 (speed, vel_x, vel_y, accel_mag, direction) as the first 5 encoder
@@ -34,15 +34,16 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from dictionary_learning import AutoEncoder
 from utils.models.videomae import VideoMAE
 
-TAU_KEYS   = ["speed", "vel_x", "vel_y", "accel_mag", "direction"]
+TAU_KEYS = ["speed", "vel_x", "vel_y", "accel_mag", "direction"]
 N_TEMPORAL = 8
-N_SPATIAL  = 196
-N_FRAMES   = 16
+N_SPATIAL = 196
+N_FRAMES = 16
 
 
 # ---------------------------------------------------------------------------
 # Dataset (identical structure to nfp_test.py)
 # ---------------------------------------------------------------------------
+
 
 class NFPDataset(Dataset):
     def __init__(self, root_dir: Path):
@@ -55,10 +56,7 @@ class NFPDataset(Dataset):
 
     def __getitem__(self, idx):
         vdir = self.video_dirs[idx]
-        frames = [
-            Image.open(vdir / f"rgba_{i:05d}.png").convert("RGB")
-            for i in range(N_FRAMES)
-        ]
+        frames = [Image.open(vdir / f"rgba_{i:05d}.png").convert("RGB") for i in range(N_FRAMES)]
         with open(vdir / "metadata.json") as f:
             meta = json.load(f)
         traj = meta["trajectory"]
@@ -69,27 +67,28 @@ class NFPDataset(Dataset):
             ball_token_steps.append(frame_rec["spatial_token"])
         return (
             frames,
-            torch.tensor(tau_steps,        dtype=torch.float32),   # [8, 5]
-            torch.tensor(ball_token_steps, dtype=torch.long),       # [8]
+            torch.tensor(tau_steps, dtype=torch.float32),  # [8, 5]
+            torch.tensor(ball_token_steps, dtype=torch.long),  # [8]
         )
 
 
 def make_collate(processor):
     def collate(batch):
-        inputs      = processor(images=[b[0] for b in batch], return_tensors="pt")
-        tau         = torch.stack([b[1] for b in batch])    # [B, 8, 5]
-        ball_tokens = torch.stack([b[2] for b in batch])    # [B, 8]
+        inputs = processor(images=[b[0] for b in batch], return_tensors="pt")
+        tau = torch.stack([b[1] for b in batch])  # [B, 8, 5]
+        ball_tokens = torch.stack([b[2] for b in batch])  # [B, 8]
         return inputs, tau, ball_tokens
+
     return collate
 
 
 def extract_ball_tracking(acts_spatial, ball_tokens):
     B, T, S, D = acts_spatial.shape
-    mask        = (ball_tokens >= 0)
+    mask = ball_tokens >= 0
     safe_tokens = ball_tokens.clamp(min=0)
-    idx         = safe_tokens.unsqueeze(-1).unsqueeze(-1).expand(B, T, 1, D)
-    ball_acts   = acts_spatial.gather(2, idx).squeeze(2)
-    ball_acts   = ball_acts * mask.unsqueeze(-1).float()
+    idx = safe_tokens.unsqueeze(-1).unsqueeze(-1).expand(B, T, 1, D)
+    ball_acts = acts_spatial.gather(2, idx).squeeze(2)
+    ball_acts = ball_acts * mask.unsqueeze(-1).float()
     return ball_acts, mask
 
 
@@ -97,9 +96,12 @@ def extract_ball_tracking(acts_spatial, ball_tokens):
 # Collect all ball-tracking representations
 # ---------------------------------------------------------------------------
 
+
 def collect_activations(model, ds, args, device):
     dl = DataLoader(
-        ds, batch_size=args.batch_size, shuffle=False,
+        ds,
+        batch_size=args.batch_size,
+        shuffle=False,
         num_workers=args.num_workers,
         collate_fn=make_collate(model.processor),
     )
@@ -109,20 +111,18 @@ def collect_activations(model, ds, args, device):
     all_X, all_tau, all_mask = [], [], []
     for inputs, tau, ball_tokens in tqdm(dl, desc="Extracting VideoMAE reps"):
         model.encode(inputs)
-        acts         = model.register[hook_key][0]            # [B, 1568, 768]
-        B            = acts.shape[0]
+        acts = model.register[hook_key][0]  # [B, 1568, 768]
+        B = acts.shape[0]
         acts_spatial = acts.view(B, N_TEMPORAL, N_SPATIAL, -1)
 
-        ball_acts, mask = extract_ball_tracking(
-            acts_spatial.to(device), ball_tokens.to(device)
-        )
+        ball_acts, mask = extract_ball_tracking(acts_spatial.to(device), ball_tokens.to(device))
         all_X.append(ball_acts.cpu())
         all_tau.append(tau)
         all_mask.append(mask.cpu())
 
-    X    = torch.cat(all_X,    dim=0)   # [N, 8, 768]
-    tau  = torch.cat(all_tau,  dim=0)   # [N, 8, 5]
-    mask = torch.cat(all_mask, dim=0)   # [N, 8]
+    X = torch.cat(all_X, dim=0)  # [N, 8, 768]
+    tau = torch.cat(all_tau, dim=0)  # [N, 8, 5]
+    mask = torch.cat(all_mask, dim=0)  # [N, 8]
     return X, tau, mask
 
 
@@ -130,17 +130,18 @@ def collect_activations(model, ds, args, device):
 # Fit OLS linear probes
 # ---------------------------------------------------------------------------
 
+
 def fit_probes(X_c, tau_flat, mask_flat):
     """
     X_c      : [M, 768]  ball-tracking reps centered by sae.bias (float32 numpy)
     tau_flat : [M, 5]
-    mask_flat: [M] bool  — use only on-screen frames for fitting
+    mask_flat: [M] bool  - use only on-screen frames for fitting
 
     Returns unit-norm directions [5, 768].
     """
-    on     = mask_flat
-    X_on   = X_c[on]            # [M_on, 768]
-    tau_on = tau_flat[on]       # [M_on, 5]
+    on = mask_flat
+    X_on = X_c[on]  # [M_on, 768]
+    tau_on = tau_flat[on]  # [M_on, 5]
 
     # Augment with intercept column
     A = np.hstack([X_on, np.ones((X_on.shape[0], 1), dtype=np.float32)])
@@ -149,47 +150,48 @@ def fit_probes(X_c, tau_flat, mask_flat):
     print(f"\n{'Probe':>12}  {'||w||':>8}  {'R²':>8}  {'mean_proj':>10}")
     print("-" * 46)
     for k, name in enumerate(TAU_KEYS):
-        y    = tau_on[:, k]
+        y = tau_on[:, k]
         coef, _, _, _ = np.linalg.lstsq(A, y, rcond=None)
-        w    = coef[:768].astype(np.float32)
+        w = coef[:768].astype(np.float32)
         norm = np.linalg.norm(w)
         if norm < 1e-8:
             print(f"  WARNING: probe for {name} near-zero, using random dir")
-            w    = np.random.randn(768).astype(np.float32)
+            w = np.random.randn(768).astype(np.float32)
             norm = np.linalg.norm(w)
-        w_hat      = w / norm
-        proj       = X_on @ w_hat
-        mean_proj  = proj.mean()
-        y_hat      = A @ coef
-        ss_res     = ((y - y_hat) ** 2).sum()
-        ss_tot     = ((y - y.mean()) ** 2).sum()
-        r2         = 1 - ss_res / ss_tot if ss_tot > 0 else 0.0
+        w_hat = w / norm
+        proj = X_on @ w_hat
+        mean_proj = proj.mean()
+        y_hat = A @ coef
+        ss_res = ((y - y_hat) ** 2).sum()
+        ss_tot = ((y - y.mean()) ** 2).sum()
+        r2 = 1 - ss_res / ss_tot if ss_tot > 0 else 0.0
         print(f"{name:>12}  {norm:>8.4f}  {r2:>8.4f}  {mean_proj:>10.4f}")
         directions.append(w_hat)
 
-    return np.stack(directions, axis=0)   # [5, 768]
+    return np.stack(directions, axis=0)  # [5, 768]
 
 
 # ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
 
+
 def parse_args():
     p = argparse.ArgumentParser()
-    p.add_argument("--dataset_dir",      required=True)
-    p.add_argument("--sae_path",         required=True)
-    p.add_argument("--output_path",      required=True)
-    p.add_argument("--model_name",       default="MCG-NJU/videomae-base-finetuned-ssv2")
-    p.add_argument("--layer",            default=11, type=int)
+    p.add_argument("--dataset_dir", required=True)
+    p.add_argument("--sae_path", required=True)
+    p.add_argument("--output_path", required=True)
+    p.add_argument("--model_name", default="MCG-NJU/videomae-base-finetuned-ssv2")
+    p.add_argument("--layer", default=11, type=int)
     p.add_argument("--attachment_point", default="post_mlp_residual")
-    p.add_argument("--batch_size",       default=4,  type=int)
-    p.add_argument("--num_workers",      default=4,  type=int)
-    p.add_argument("--device",           default="cuda:0")
+    p.add_argument("--batch_size", default=4, type=int)
+    p.add_argument("--num_workers", default=4, type=int)
+    p.add_argument("--device", default="cuda:0")
     return p.parse_args()
 
 
 def main():
-    args   = parse_args()
+    args = parse_args()
     device = torch.device(args.device)
 
     print(f"Loading VideoMAE: {args.model_name}")
@@ -206,27 +208,27 @@ def main():
     sae.eval()
 
     N, T, D = X.shape
-    X_flat    = X.reshape(N * T, D).numpy()         # [N*8, 768]
-    tau_flat  = tau.reshape(N * T, 5).numpy()       # [N*8, 5]
+    X_flat = X.reshape(N * T, D).numpy()  # [N*8, 768]
+    tau_flat = tau.reshape(N * T, 5).numpy()  # [N*8, 5]
     mask_flat = mask.reshape(N * T).numpy().astype(bool)
 
-    # Center X by SAE's global bias — this is the input to encoder.linear
-    bias_np = sae.bias.data.cpu().numpy()           # [768]
-    X_c     = X_flat - bias_np[None, :]             # [N*8, 768]
+    # Center X by SAE's global bias - this is the input to encoder.linear
+    bias_np = sae.bias.data.cpu().numpy()  # [768]
+    X_c = X_flat - bias_np[None, :]  # [N*8, 768]
 
     print("\nFitting linear probes on centered activations...")
-    directions = fit_probes(X_c, tau_flat, mask_flat)   # [5, 768] unit vectors
+    directions = fit_probes(X_c, tau_flat, mask_flat)  # [5, 768] unit vectors
 
     print("\nInjecting oracle features into SAE (features 0–4)...")
     with torch.no_grad():
         for k, name in enumerate(TAU_KEYS):
-            d_k = torch.tensor(directions[k], dtype=torch.float32)   # [768] unit vec
+            d_k = torch.tensor(directions[k], dtype=torch.float32)  # [768] unit vec
 
             # Encoder direction
             sae.encoder.weight.data[k] = d_k
 
             # Encoder bias: center activation around mean projection
-            on   = mask_flat
+            on = mask_flat
             mu_k = float((X_c[on] @ directions[k]).mean())
             sae.encoder.bias.data[k] = -mu_k
             print(f"  feature {k:2d} ({name:<12}): b_enc = {-mu_k:+.4f}")

@@ -1,6 +1,6 @@
-"""
-Experiment C3 — global temporal-capability restoration, measured on SSv2 top-1 accuracy
-across ALL 174 classes.
+"""Global temporal-capability restoration (Experiment C3) - SSv2 top-1 accuracy across all 174 classes.
+
+Measured on SSv2 top-1 accuracy across ALL 174 classes.
 
 Question: do the 85 NFP-identified features influence the model's temporal capability at
 the level of task performance, not just on hand-picked class pairs?
@@ -20,13 +20,15 @@ matters and be irrelevant where it does not.
 
 Sets: NFP-85, flippers-12, random-85, static-85, all-6144 (ceiling).
 
-Usage (from sae-for-vlm/):
-  python analysis/steer_global_restore.py --n_per_class 10
+Usage (from repo root):
+  python -m causal_analysis.exp14_patching_restore.steer_global_restore --n_per_class 10
 """
+
 import argparse
 import json
 import sys
 from pathlib import Path
+from typing import Optional, Tuple
 
 import numpy as np
 import torch
@@ -39,15 +41,25 @@ from causal_analysis.common.steer_ssv2_logits import SteerLayer, ssv2_collate
 from causal_analysis.common.steer_pair_screen import ItemFrames
 
 
-def main():
+def main() -> None:
+    """Run the C3 global-restoration experiment and write accuracy metrics as JSON.
+
+    Takes n videos from every SSv2 class, shuffles each clip's 8 tubelet blocks (a fixed
+    per-video permutation), and restores each feature set's clean token activations into
+    the shuffled run at layer 11. Reports overall top-1 accuracy for the clean, shuffled,
+    and restored conditions, the fraction of shuffle-lost accuracy each set recovers, and
+    the same recovery split across class terciles ranked by shuffle-induced drop.
+    """
     ap = argparse.ArgumentParser()
     ap.add_argument("--model_name", default="MCG-NJU/videomae-base-finetuned-ssv2")
     ap.add_argument("--sae_path", default="local_runs/sae/ae.pt")
     ap.add_argument("--nfp_results", default="local_runs/nfp_results/sae_nfp.pt")
     ap.add_argument("--screen_json", default="local_runs/steering/expB2_pair_screen.json")
     ap.add_argument("--ssv2_videos", default="../SSv2/videos")
-    ap.add_argument("--ssv2_val_json",
-                    default="../SSv2/raw/20bn-something-something-download-package-labels/labels/validation.json")
+    ap.add_argument(
+        "--ssv2_val_json",
+        default="../SSv2/raw/20bn-something-something-download-package-labels/labels/validation.json",
+    )
     ap.add_argument("--layer", default=11, type=int)
     ap.add_argument("--n_per_class", default=10, type=int)
     ap.add_argument("--static_t_bar", default=2.0, type=float)
@@ -60,30 +72,43 @@ def main():
 
     clf = VideoMAEForVideoClassification.from_pretrained(args.model_name).to(device).eval()
     label2idx = {v: int(k) for k, v in clf.config.id2label.items()}
-    sae = AutoEncoder.from_pretrained(args.sae_path, device=device); sae.eval()
+    sae = AutoEncoder.from_pretrained(args.sae_path, device=device)
+    sae.eval()
     steer = SteerLayer(clf.videomae.encoder.layer[args.layer], sae).to(device)
     clf.videomae.encoder.layer[args.layer] = steer
     proc = VideoMAEImageProcessor.from_pretrained(args.model_name)
 
     nfp = torch.load(args.nfp_results, map_location="cpu")
-    p_all = nfp["p_val"].numpy(); t_all = nfp["t_stat"].numpy()
+    p_all = nfp["p_val"].numpy()
+    t_all = nfp["t_stat"].numpy()
     bonf = 0.05 / p_all.shape[0]
     sig = [int(i) for i in np.where((p_all < bonf).any(1))[0]]
     finite = np.isfinite(t_all).all(1)
-    low_t = (np.abs(np.nan_to_num(t_all, nan=1e9)).max(1) < args.static_t_bar)
+    low_t = np.abs(np.nan_to_num(t_all, nan=1e9)).max(1) < args.static_t_bar
     static_pool = [int(i) for i in np.where(finite & low_t)[0] if i not in set(sig)]
     screen = json.load(open(args.screen_json))
     flippers = [r["idx"] for r in screen["features"] if r["n_pairs_flip50"] >= 1]
     rng = np.random.RandomState(args.seed + 7)
-    sets = [("NFP-85", torch.tensor(sorted(sig))),
-            ("flippers-12", torch.tensor(sorted(flippers))),
-            ("random-85", torch.tensor(sorted(rng.choice(
-                [k for k in range(sae.dict_size) if k not in set(sig)], 85, replace=False)))),
-            ("static-85", torch.tensor(sorted(rng.choice(static_pool, 85, replace=False)))),
-            ("ALL-6144", None)]   # None = restore the full feature vector
+    sets = [
+        ("NFP-85", torch.tensor(sorted(sig))),
+        ("flippers-12", torch.tensor(sorted(flippers))),
+        (
+            "random-85",
+            torch.tensor(
+                sorted(
+                    rng.choice(
+                        [k for k in range(sae.dict_size) if k not in set(sig)], 85, replace=False
+                    )
+                )
+            ),
+        ),
+        ("static-85", torch.tensor(sorted(rng.choice(static_pool, 85, replace=False)))),
+        ("ALL-6144", None),
+    ]  # None = restore the full feature vector
 
     val = json.load(open(args.ssv2_val_json))
-    vrng = np.random.RandomState(args.seed + 1); vrng.shuffle(val)
+    vrng = np.random.RandomState(args.seed + 1)
+    vrng.shuffle(val)
     by_tmpl = {}
     for it in val:
         c = label2idx.get(it.get("template", ""), -1)
@@ -92,19 +117,39 @@ def main():
     items, labels = [], []
     for c in sorted(by_tmpl):
         take = by_tmpl[c][: args.n_per_class]
-        items += take; labels += [c] * len(take)
+        items += take
+        labels += [c] * len(take)
     labels = np.array(labels)
-    print(f"{len(items)} videos across {len(by_tmpl)} classes | sets: "
-          + ", ".join(n for n, _ in sets))
+    print(
+        f"{len(items)} videos across {len(by_tmpl)} classes | sets: "
+        + ", ".join(n for n, _ in sets)
+    )
 
-    dl = DataLoader(ItemFrames(args.ssv2_videos, items), batch_size=args.batch_size,
-                    shuffle=False, num_workers=0, collate_fn=ssv2_collate(proc))
+    dl = DataLoader(
+        ItemFrames(args.ssv2_videos, items),
+        batch_size=args.batch_size,
+        shuffle=False,
+        num_workers=0,
+        collate_fn=ssv2_collate(proc),
+    )
 
     prng = np.random.RandomState(args.seed + 99)
     conds = ["clean", "shuffled"] + [n for n, _ in sets]
     correct = {c: [] for c in conds}
 
-    def top1(pv, patch=None):
+    def top1(
+        pv: torch.Tensor, patch: Optional[Tuple[torch.Tensor, torch.Tensor]] = None
+    ) -> np.ndarray:
+        """Return the classifier's top-1 predictions for a batch of clips.
+
+        Args:
+            pv: A [B, 16, 3, 224, 224] pixel-value batch.
+            patch: Optional (feature-index tensor, clean token-activation tensor) installed
+                at the steered layer for this batch, or None for an unpatched pass.
+
+        Returns:
+            An integer array of predicted class indices, one per clip.
+        """
         if patch is not None:
             steer.patch_idx, steer.patch_vals = patch
         with torch.no_grad():
@@ -114,10 +159,11 @@ def main():
 
     done = 0
     for b in dl:
-        pv = b[0]["pixel_values"]                                    # [B,16,3,224,224]
+        pv = b[0]["pixel_values"]  # [B,16,3,224,224]
         B = pv.shape[0]
         # per-video non-identity block permutation, fixed across conditions
         from causal_analysis.common.shuffle_util import block_order, random_block_perm
+
         pv_sh = pv.clone()
         for r in range(B):
             pv_sh[r] = pv[r, block_order(random_block_perm(prng))]
@@ -127,7 +173,7 @@ def main():
         steer.captured_tokens = []
         pred = top1(pv)
         steer.record_tokens_idx = None
-        f_clean = steer.captured_tokens[0]                           # [B,1568,6144] cpu
+        f_clean = steer.captured_tokens[0]  # [B,1568,6144] cpu
         correct["clean"].append(pred)
 
         correct["shuffled"].append(top1(pv_sh))
@@ -165,7 +211,9 @@ def main():
     res["terciles"] = {}
     for ti, tc in enumerate(["temporal (largest drop)", "middle", "shuffle-robust (smallest)"]):
         m = np.isin(labels, terc[ti])
-        c_, s_ = float((preds["clean"][m] == labels[m]).mean()), float((preds["shuffled"][m] == labels[m]).mean())
+        c_, s_ = float((preds["clean"][m] == labels[m]).mean()), float(
+            (preds["shuffled"][m] == labels[m]).mean()
+        )
         row = {"clean": round(c_, 3), "shuffled": round(s_, 3)}
         line = f"  {tc:<28} clean={c_:.3f} shuf={s_:.3f}"
         for name, _ in sets:

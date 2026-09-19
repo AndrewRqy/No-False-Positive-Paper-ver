@@ -33,17 +33,17 @@ def feature_tau_corr(features: np.ndarray, tau: np.ndarray) -> np.ndarray:
     N, T, D = features.shape
     _, _, K = tau.shape
 
-    f_mu  = features.mean(axis=0, keepdims=True)   # [1, T, D]
+    f_mu = features.mean(axis=0, keepdims=True)  # [1, T, D]
     f_std = features.std(axis=0, keepdims=True) + 1e-8
-    f_z   = (features - f_mu) / f_std              # [N, T, D]
+    f_z = (features - f_mu) / f_std  # [N, T, D]
 
-    t_mu  = tau.mean(axis=0, keepdims=True)        # [1, T, K]
+    t_mu = tau.mean(axis=0, keepdims=True)  # [1, T, K]
     t_std = tau.std(axis=0, keepdims=True) + 1e-8
-    t_z   = (tau - t_mu) / t_std                   # [N, T, K]
+    t_z = (tau - t_mu) / t_std  # [N, T, K]
 
     # corr[t, d, k] = mean_n( f_z[n,t,d] * t_z[n,t,k] )
     # Compute via einsum: [N,T,D] x [N,T,K] -> [T,D,K]
-    corr = np.einsum('ntd,ntk->tdk', f_z, t_z) / N  # [T, D, K]
+    corr = np.einsum("ntd,ntk->tdk", f_z, t_z) / N  # [T, D, K]
     return corr.astype(np.float32)
 
 
@@ -52,11 +52,11 @@ def print_report(feat_tau_corr: np.ndarray, label: str = ""):
     print(f"\n=== Feature-Tau Correlation Report {label}===")
 
     for k, name in enumerate(TAU_KEYS):
-        corr_k = feat_tau_corr[:, :, k]   # [T, D]
-        abs_k  = np.abs(corr_k)
+        corr_k = feat_tau_corr[:, :, k]  # [T, D]
+        abs_k = np.abs(corr_k)
 
         # Best feature per time step
-        best_feat = abs_k.max(axis=1)      # [T]
+        best_feat = abs_k.max(axis=1)  # [T]
         # Mean over time steps and features
         mean_abs = abs_k.mean()
         # Fraction of features with |r| > 0.1 at any time step
@@ -65,22 +65,25 @@ def print_report(feat_tau_corr: np.ndarray, label: str = ""):
         print(f"\n  {name}:")
         print(f"    Mean |r| across all features & time steps : {mean_abs:.4f}")
         print(f"    Frac features with max-over-time |r| > 0.1: {frac_high:.4f}")
-        print(f"    Best |r| per time step: "
-              + " ".join(f"t{t}={best_feat[t]:.3f}" for t in range(T)))
+        print(
+            f"    Best |r| per time step: " + " ".join(f"t{t}={best_feat[t]:.3f}" for t in range(T))
+        )
 
         # Top 5 features for this tau variable (max |r| over time)
         top5_idx = np.abs(corr_k).max(axis=0).argsort()[::-1][:5]
         print(f"    Top 5 features (max |r| over time):")
         for i, d in enumerate(top5_idx):
             best_t = np.abs(corr_k[:, d]).argmax()
-            print(f"      feature {d:5d}  max |r|={abs_k[:, d].max():.4f}  "
-                  f"at t={best_t}  r={corr_k[best_t, d]:+.4f}")
+            print(
+                f"      feature {d:5d}  max |r|={abs_k[:, d].max():.4f}  "
+                f"at t={best_t}  r={corr_k[best_t, d]:+.4f}"
+            )
 
 
 def parse_args():
     p = argparse.ArgumentParser()
     p.add_argument("--results_path", required=True)
-    p.add_argument("--output_path",  required=True)
+    p.add_argument("--output_path", required=True)
     return p.parse_args()
 
 
@@ -90,14 +93,14 @@ def main():
     print(f"Loading {args.results_path}")
     data = torch.load(args.results_path, map_location="cpu")
 
-    features = data["features"].numpy()   # [N, 8, D]
-    tau      = data["tau"].numpy()        # [N, 8, 5]
-    label    = data.get("model", "")
+    features = data["features"].numpy()  # [N, 8, D]
+    tau = data["tau"].numpy()  # [N, 8, 5]
+    label = data.get("model", "")
 
     print(f"Features: {features.shape}  Tau: {tau.shape}")
     print("Computing feature-tau correlations...")
 
-    corr = feature_tau_corr(features, tau)   # [T, D, 5]
+    corr = feature_tau_corr(features, tau)  # [T, D, 5]
     print_report(corr, label=f"({label}) " if label else "")
 
     out = {**data, "feat_tau_corr": torch.from_numpy(corr)}

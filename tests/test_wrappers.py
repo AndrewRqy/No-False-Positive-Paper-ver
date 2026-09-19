@@ -7,6 +7,7 @@ each model from its default HuggingFace checkpoint (downloads weights).
     python -m tests.test_wrappers
     python -m tests.test_wrappers --instantiate --device cpu
 """
+
 import argparse
 import importlib
 import sys
@@ -55,8 +56,10 @@ def main():
 
     results = check_imports()
     if args.instantiate:
-        results = {**results, **{f"{k} (instantiate)": v
-                                 for k, v in check_instantiate(args.device).items()}}
+        results = {
+            **results,
+            **{f"{k} (instantiate)": v for k, v in check_instantiate(args.device).items()},
+        }
 
     ok = True
     for name, status in results.items():

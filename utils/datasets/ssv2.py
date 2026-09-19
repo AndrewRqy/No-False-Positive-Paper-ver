@@ -27,7 +27,7 @@ def _sample_frames(source, num_frames):
             if len(frames) == num_frames:
                 break
     else:
-        # Frame count not reported — decode everything then sample
+        # Frame count not reported - decode everything then sample
         all_frames = [f.to_image() for f in container.decode(video=0)]
         if all_frames:
             indices = np.linspace(0, len(all_frames) - 1, num_frames, dtype=int)
@@ -99,7 +99,7 @@ class SSv2Dataset(Dataset):
 class SSv2TarDataset(IterableDataset):
     """
     Slower fallback that streams directly from the tar.gz without extracting.
-    Use SSv2Dataset (above) when possible — it's significantly faster.
+    Use SSv2Dataset (above) when possible - it's significantly faster.
     Only supports shuffle=False and num_workers=0.
     """
 

@@ -1,4 +1,5 @@
-"""
+"""Fit PCA / ICA - linear-decomposition baselines for the monosemanticity comparison.
+
 Fit PCA and ICA decompositions on VideoMAE layer-11 activations (the same corpus
 used to train the SAE), and save them as Dictionary checkpoints that the
 activation-extraction pipeline can load via PCADict / ICADict.from_pretrained.
@@ -20,44 +21,89 @@ Checkpoint format (torch.save dict):
     mean            : (activation_dim,)               data mean
     E               : (n_components, activation_dim)  encode matrix  s=(x-mean)@E.T
     D               : (n_components, activation_dim)  decode matrix  x_hat=s@D+mean
+
+Usage (from repo root):
+    python -m sae_training.fit_pca_ica --activations_dir ./acts --output_dir ./out
 """
+
 import os
 import glob
 import argparse
+from typing import Any, Dict
 
 import numpy as np
 import torch
 from sklearn.decomposition import PCA, FastICA
 
 
-def get_args_parser():
+def get_args_parser() -> argparse.ArgumentParser:
+    """Build the argument parser for the PCA/ICA fitting CLI."""
     p = argparse.ArgumentParser("Fit PCA/ICA on activations", add_help=False)
-    p.add_argument("--activations_dir", required=True, type=str,
-                   help="Directory of *_part*.pt activation chunks (SAE training corpus).")
+    p.add_argument(
+        "--activations_dir",
+        required=True,
+        type=str,
+        help="Directory of *_part*.pt activation chunks (SAE training corpus).",
+    )
     p.add_argument("--output_dir", required=True, type=str)
-    p.add_argument("--n_components", default=768, type=int,
-                   help="Number of components. Capped at activation_dim (768).")
-    p.add_argument("--n_samples", default=500_000, type=int,
-                   help="Number of activation vectors to subsample for fitting.")
-    p.add_argument("--max_chunks", default=-1, type=int,
-                   help="Load at most this many chunk files (-1 = all). Each chunk is "
-                        "~50k vectors; loading ~12 chunks already exceeds the default "
-                        "n_samples, so this caps I/O without biasing the subsample.")
-    p.add_argument("--methods", nargs="+", default=["pca", "ica"],
-                   choices=["pca", "ica"])
+    p.add_argument(
+        "--n_components",
+        default=768,
+        type=int,
+        help="Number of components. Capped at activation_dim (768).",
+    )
+    p.add_argument(
+        "--n_samples",
+        default=500_000,
+        type=int,
+        help="Number of activation vectors to subsample for fitting.",
+    )
+    p.add_argument(
+        "--max_chunks",
+        default=-1,
+        type=int,
+        help="Load at most this many chunk files (-1 = all). Each chunk is "
+        "~50k vectors; loading ~12 chunks already exceeds the default "
+        "n_samples, so this caps I/O without biasing the subsample.",
+    )
+    p.add_argument("--methods", nargs="+", default=["pca", "ica"], choices=["pca", "ica"])
     p.add_argument("--ica_max_iter", default=2000, type=int)
     p.add_argument("--ica_tol", default=1e-3, type=float)
-    p.add_argument("--l2_normalize", action="store_true",
-                   help="L2-normalize each activation vector before fitting (improves "
-                        "ICA conditioning; matches the ICA-Lens preprocessing).")
+    p.add_argument(
+        "--l2_normalize",
+        action="store_true",
+        help="L2-normalize each activation vector before fitting (improves "
+        "ICA conditioning; matches the ICA-Lens preprocessing).",
+    )
     p.add_argument("--seed", default=0, type=int)
     return p
 
 
-def load_subsample(activations_dir, n_samples, max_chunks, seed):
+def load_subsample(activations_dir: str, n_samples: int, max_chunks: int, seed: int) -> np.ndarray:
+    """Load a random subsample of activation vectors from chunk files.
+
+    Shuffles the chunk order so that a chunk cap samples across the corpus rather
+    than only its head, loads chunks until n_samples is reached, and downsamples
+    the concatenation to exactly n_samples rows if it overshoots.
+
+    Args:
+        activations_dir: Directory of *_part*.pt activation chunk files.
+        n_samples: Target number of activation vectors to return.
+        max_chunks: Load at most this many chunk files (-1 for all).
+        seed: RNG seed for chunk shuffling and row subsampling.
+
+    Returns:
+        A [n, activation_dim] float32 array of subsampled activations.
+
+    Raises:
+        FileNotFoundError: If no *_part*.pt chunks are found in activations_dir.
+    """
     files = sorted(
-        (f for f in glob.glob(os.path.join(activations_dir, "*.pt"))
-         if not os.path.basename(f).startswith("all")),
+        (
+            f
+            for f in glob.glob(os.path.join(activations_dir, "*.pt"))
+            if not os.path.basename(f).startswith("all")
+        ),
         key=lambda x: int(x.split("_part")[-1].split(".pt")[0]),
     )
     if not files:
@@ -86,7 +132,18 @@ def load_subsample(activations_dir, n_samples, max_chunks, seed):
     return X
 
 
-def fit_pca(X, n_components, seed):
+def fit_pca(X: np.ndarray, n_components: int, seed: int) -> Dict[str, Any]:
+    """Fit a randomized PCA and package it as a Dictionary checkpoint dict.
+
+    Args:
+        X: [n, activation_dim] array of activation vectors to fit on.
+        n_components: Number of principal components to keep.
+        seed: Random seed for the randomized SVD solver.
+
+    Returns:
+        A checkpoint dict with the PCA mean, encode/decode matrices, and the
+        cumulative explained variance ratio.
+    """
     pca = PCA(n_components=n_components, svd_solver="randomized", random_state=seed)
     pca.fit(X)
     evr = float(pca.explained_variance_ratio_.sum())
@@ -96,17 +153,32 @@ def fit_pca(X, n_components, seed):
         "activation_dim": X.shape[1],
         "n_components": n_components,
         "mean": torch.from_numpy(pca.mean_).float(),
-        "E": torch.from_numpy(pca.components_).float(),          # (n_comp, d)
-        "D": torch.from_numpy(pca.components_).float(),          # PCA: decode = components
+        "E": torch.from_numpy(pca.components_).float(),  # (n_comp, d)
+        "D": torch.from_numpy(pca.components_).float(),  # PCA: decode = components
         "explained_variance_ratio": evr,
     }
 
 
-def fit_ica(X, n_components, max_iter, tol, seed):
+def fit_ica(
+    X: np.ndarray, n_components: int, max_iter: int, tol: float, seed: int
+) -> Dict[str, Any]:
+    """Fit a FastICA decomposition and package it as a Dictionary checkpoint dict.
+
+    Args:
+        X: [n, activation_dim] array of activation vectors to fit on.
+        n_components: Number of independent components to estimate.
+        max_iter: Maximum FastICA iterations.
+        tol: Convergence tolerance for FastICA.
+        seed: Random seed for FastICA.
+
+    Returns:
+        A checkpoint dict with the ICA mean, unmixing (encode) and mixing (decode)
+        matrices, and the iteration count.
+    """
     ica = FastICA(
         n_components=n_components,
         algorithm="parallel",
-        whiten="unit-variance",   # FastICA requires whitening; done internally via PCA
+        whiten="unit-variance",  # FastICA requires whitening; done internally via PCA
         fun="logcosh",
         max_iter=max_iter,
         tol=tol,
@@ -124,13 +196,19 @@ def fit_ica(X, n_components, max_iter, tol, seed):
         "activation_dim": X.shape[1],
         "n_components": n_components,
         "mean": torch.from_numpy(ica.mean_).float(),
-        "E": torch.from_numpy(ica.components_).float(),          # unmixing (n_comp, d)
-        "D": torch.from_numpy(ica.mixing_.T).float(),            # mixing.T (n_comp, d)
+        "E": torch.from_numpy(ica.components_).float(),  # unmixing (n_comp, d)
+        "D": torch.from_numpy(ica.mixing_.T).float(),  # mixing.T (n_comp, d)
         "n_iter": int(getattr(ica, "n_iter_", -1)),
     }
 
 
-def main(args):
+def main(args: argparse.Namespace) -> None:
+    """Load the subsample, fit the requested decompositions, and save checkpoints.
+
+    Args:
+        args: Parsed CLI arguments specifying the input dir, output dir, component
+            count, sample count, methods, and preprocessing flags.
+    """
     os.makedirs(args.output_dir, exist_ok=True)
     X = load_subsample(args.activations_dir, args.n_samples, args.max_chunks, args.seed)
 

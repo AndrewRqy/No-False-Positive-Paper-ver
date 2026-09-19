@@ -1,15 +1,19 @@
-"""Distribution of the NFP test statistic across the SAE dictionaries.
+"""T-Score Distribution Plot - NFP statistic across SAE dictionaries.
+
+Plots the distribution of the NFP test statistic across the SAE dictionaries.
 
 For each SAE dictionary, plots the histogram of max_k |t_k| over all features,
 so the whole population is visible rather than only the count above the
 Bonferroni threshold. Dead features (non-finite t) are excluded, matching the
 NFP test. The threshold and the flagged count are drawn on each panel.
 """
+
 import argparse
 
 import numpy as np
 import torch
 import matplotlib
+
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 from scipy import stats
@@ -23,7 +27,14 @@ MODELS = [
 ]
 
 
-def main():
+def main() -> None:
+    """Plot the per-dictionary distribution of the NFP test statistic.
+
+    For each configured SAE dictionary, loads its saved t-statistics, drops dead
+    (non-finite) features, and draws a log-scale histogram of max_k |t_k| with
+    the Bonferroni threshold and flagged count annotated. Saves the figure as
+    PDF and PNG.
+    """
     ap = argparse.ArgumentParser()
     ap.add_argument("--out", default="local_runs/expansion/tscore_dist")
     ap.add_argument("--n_videos", default=3000, type=int)
@@ -45,12 +56,20 @@ def main():
         ax.axvline(thr, color="k", ls="--", lw=1)
         ax.set_yscale("log")
         ax.set_title(f"{name} ({n_flag} of {D} flagged)", fontsize=9)
-        ax.text(thr * 1.03, ax.get_ylim()[1] * 0.35,
-                f"threshold {thr:.1f}", fontsize=7, rotation=90, va="top")
+        ax.text(
+            thr * 1.03,
+            ax.get_ylim()[1] * 0.35,
+            f"threshold {thr:.1f}",
+            fontsize=7,
+            rotation=90,
+            va="top",
+        )
         ax.tick_params(labelsize=7)
-        print(f"{name}: flagged={n_flag} dead={n_dead} "
-              f"median max|t|={np.median(maxabs):.2f} p99={np.percentile(maxabs, 99):.1f} "
-              f"max={maxabs.max():.1f} thr={thr:.2f}")
+        print(
+            f"{name}: flagged={n_flag} dead={n_dead} "
+            f"median max|t|={np.median(maxabs):.2f} p99={np.percentile(maxabs, 99):.1f} "
+            f"max={maxabs.max():.1f} thr={thr:.2f}"
+        )
     for ax in axes[-1]:
         ax.set_xlabel(r"$\max_k |t_k|$ per feature", fontsize=8)
     for ax in axes[:, 0]:

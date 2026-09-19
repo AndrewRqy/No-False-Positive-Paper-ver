@@ -16,13 +16,14 @@ on-screen steps, from analysis/dump_nfp_feature_acts.py) and produce:
 A grid GIF adds NO frames: it tiles the same 16 existing frames of 16 videos side by side
 and steps through t=0..15 together. Each cell carries a small id + activation caption.
 
-Usage (from sae-for-vlm/):
+Usage (from repo root):
   python analysis/build_feature_grids.py \
      --nfp_results local_runs/nfp_results/sae_nfp.pt \
      --feat_acts   local_runs/nfp_results/sae_feat_acts.pt \
      --frames_dir  data/output/nfp --gifs_dir data/output/nfp_gifs \
      --out_dir     local_runs/nfp_feature_gifs
 """
+
 import argparse
 import shutil
 from pathlib import Path
@@ -47,6 +48,7 @@ def load_frames(vdir: Path):
 def make_grid_gif(top_vids, acts, frames_dir, out_path, cell=192, cap=18, fps=8):
     """top_vids: list of (video_id, activation). 4x4 grid, synced 16 frames."""
     import imageio.v2 as imageio
+
     cols = rows = 4
     cache = {}
 
@@ -63,9 +65,17 @@ def make_grid_gif(top_vids, acts, frames_dir, out_path, cell=192, cap=18, fps=8)
             img = frames_for(vid)[t]
             img = cv2.resize(img, (cell, cell), interpolation=cv2.INTER_AREA)
             y0, x0 = r * (cell + cap), c * cell
-            canvas[y0:y0 + cell, x0:x0 + cell] = img
-            cv2.putText(canvas, f"{vid} a={a:.2f}", (x0 + 3, y0 + cell + 13),
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.40, (255, 255, 255), 1, cv2.LINE_AA)
+            canvas[y0 : y0 + cell, x0 : x0 + cell] = img
+            cv2.putText(
+                canvas,
+                f"{vid} a={a:.2f}",
+                (x0 + 3, y0 + cell + 13),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.40,
+                (255, 255, 255),
+                1,
+                cv2.LINE_AA,
+            )
         gif_frames.append(cv2.cvtColor(canvas, cv2.COLOR_BGR2RGB))
     imageio.mimsave(str(out_path), gif_frames, duration=1.0 / fps, loop=0)
 
@@ -85,7 +95,7 @@ def main():
     args = ap.parse_args()
 
     nfp = torch.load(args.nfp_results, map_location="cpu")
-    p_val = nfp["p_val"].numpy()                       # [6144, 5]
+    p_val = nfp["p_val"].numpy()  # [6144, 5]
     t_stat = nfp["t_stat"].numpy()
     D = p_val.shape[0]
     bonf = args.alpha / D
@@ -105,7 +115,7 @@ def main():
         for line in mpath.read_text().splitlines()[1:]:
             f = line.split(",")
             if len(f) >= 6:
-                meta[f[0]] = (f[1], f[3], f[4])   # profile_type, max_speed, on_screen
+                meta[f[0]] = (f[1], f[3], f[4])  # profile_type, max_speed, on_screen
 
     out_root = Path(args.out_dir)
     out_root.mkdir(parents=True, exist_ok=True)
@@ -121,8 +131,7 @@ def main():
         (fdir / "top50").mkdir(parents=True, exist_ok=True)
 
         top16 = [(vids[j], float(col[j])) for j in order[: args.top_grid]]
-        make_grid_gif(top16, col, args.frames_dir,
-                      fdir / f"feat{i:05d}_top16_grid.gif")
+        make_grid_gif(top16, col, args.frames_dir, fdir / f"feat{i:05d}_top16_grid.gif")
 
         rows = ["rank,video_id,activation,profile_type,max_speed,on_screen"]
         for rank, j in enumerate(order[: args.top_folder]):
@@ -134,8 +143,7 @@ def main():
             rows.append(f"{rank},{vid},{col[j]:.5f},{pt},{ms},{ons}")
         (fdir / "ranking.csv").write_text("\n".join(rows) + "\n")
 
-        index.append(f"feat{i:05d},{tag},{nz}," +
-                     ",".join(f"{t_stat[i,k]:.2f}" for k in range(5)))
+        index.append(f"feat{i:05d},{tag},{nz}," + ",".join(f"{t_stat[i,k]:.2f}" for k in range(5)))
         if (n + 1) % 10 == 0:
             print(f"  {n+1}/{len(sig_idx)} features done")
 

@@ -4,6 +4,7 @@ Shared helpers for the PCA/ICA dimensionality sweeps (VideoMAE / DINO / syntheti
 Kept dependency-light on purpose: importing this must NOT pull in VideoMAE/DINOv2, so the
 synthetic sweep (pure linear algebra on cached reps) stays fast and model-free.
 """
+
 import glob
 from pathlib import Path
 
@@ -41,6 +42,7 @@ def make_linear_encoder(mean, E, mode, device):
         if mode == "abs":
             return s.abs()
         return s
+
     return encode
 
 
@@ -48,8 +50,8 @@ def feature_dirs(E, mode):
     """Per-feature direction in input space [F, d] for a fitted encode matrix E [D, d]."""
     E = torch.as_tensor(E, dtype=torch.float32)
     if mode == "sign_split":
-        return torch.cat([E, -E], dim=0)   # [2D, d], matches cat([relu(s), relu(-s)])
-    return E                               # abs/signed: one feature per component
+        return torch.cat([E, -E], dim=0)  # [2D, d], matches cat([relu(s), relu(-s)])
+    return E  # abs/signed: one feature per component
 
 
 def within_video_covariance_all(feats, tau):
@@ -69,25 +71,26 @@ def nfp_stats(encode, ball, tau, mask, device, alpha=0.05, fixed_denom=768):
         M         : F
         diag_dom  : bool (diagonal is row-max of the selectivity matrix for sig-in-row
                     features, adaptive bar). Selectivity = mean |C_mean| with tau
-                    z-scored globally (effect size on a common scale), NOT mean |t| —
+                    z-scored globally (effect size on a common scale), NOT mean |t| -
                     t measures consistency across videos, not response strength.
     """
     V, T, _ = ball.shape
     flat = ball.reshape(V * T, -1).to(device).float()
     feats = encode(flat).reshape(V, T, -1).cpu()
     feats = feats * mask.unsqueeze(-1).float()
-    C = within_video_covariance_all(feats, tau).numpy()        # [V, F, 5]
+    C = within_video_covariance_all(feats, tau).numpy()  # [V, F, 5]
     M = C.shape[1]
     bonf = alpha / M
     bonf_fixed = alpha / fixed_denom
-    t = np.zeros((M, 5), np.float32); p = np.ones_like(t)
+    t = np.zeros((M, 5), np.float32)
+    p = np.ones_like(t)
     for k in range(5):
         t[:, k], p[:, k] = stats.ttest_1samp(C[:, :, k], 0.0)
     sig = (p < bonf).any(axis=1)
     sig_fixed = (p < bonf_fixed).any(axis=1)
     # z-scored-tau effect size: Cov(psi, tau_k/sigma_k) = Cov(psi, tau_k)/sigma_k
     tau_sigma = tau.reshape(-1, 5).numpy().std(axis=0) + 1e-12
-    C_sel = C.mean(axis=0) / tau_sigma[None, :]                # [F, 5]
+    C_sel = C.mean(axis=0) / tau_sigma[None, :]  # [F, 5]
     diag_dom = True
     for kr in range(5):
         m = p[:, kr] < bonf
@@ -96,8 +99,7 @@ def nfp_stats(encode, ball, tau, mask, device, alpha=0.05, fixed_denom=768):
         row = [np.abs(C_sel[m, kc]).mean() for kc in range(5)]
         if int(np.argmax(row)) != kr:
             diag_dom = False
-    return {"sig": sig, "sig_fixed": sig_fixed, "t": t, "p": p,
-            "M": M, "diag_dom": bool(diag_dom)}
+    return {"sig": sig, "sig_fixed": sig_fixed, "t": t, "p": p, "M": M, "diag_dom": bool(diag_dom)}
 
 
 def proj_fraction(dirs, W):
@@ -107,5 +109,5 @@ def proj_fraction(dirs, W):
     """
     dirs = torch.as_tensor(dirs, dtype=torch.float32)
     W = torch.as_tensor(W, dtype=torch.float32)
-    proj = dirs @ W.t()                                # [F, k]
-    return ((proj ** 2).sum(1) / ((dirs ** 2).sum(1) + 1e-12)).numpy()
+    proj = dirs @ W.t()  # [F, k]
+    return ((proj**2).sum(1) / ((dirs**2).sum(1) + 1e-12)).numpy()

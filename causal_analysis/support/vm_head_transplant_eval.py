@@ -6,6 +6,7 @@ mean-pooled encoder output of the checkpoint without label finetuning, so the
 head can be applied directly. Compares against the trained linear probe on
 the same held-out split (the first rows, matching vm_base_probe.py).
 """
+
 import argparse
 
 import torch
@@ -20,6 +21,7 @@ def main():
     device = torch.device(args.device)
 
     from transformers import VideoMAEForVideoClassification
+
     ft = VideoMAEForVideoClassification.from_pretrained("MCG-NJU/videomae-base-finetuned-ssv2")
     label2idx = {v: int(k) for k, v in ft.config.id2label.items()}
     fc_norm = ft.fc_norm.to(device).eval() if ft.fc_norm is not None else None
@@ -34,7 +36,9 @@ def main():
     with torch.no_grad():
         z = fc_norm(Xv) if fc_norm is not None else Xv
         acc_t = (head(z).argmax(-1) == yv).float().mean().item()
-    print(f"transplanted finetuned head on base features: {acc_t:.4f} (n={n_val}, chance {1/174:.4f})")
+    print(
+        f"transplanted finetuned head on base features: {acc_t:.4f} (n={n_val}, chance {1/174:.4f})"
+    )
 
     try:
         pw = torch.load(args.probe, map_location="cpu", weights_only=False)

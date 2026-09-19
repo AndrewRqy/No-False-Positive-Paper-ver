@@ -1,3 +1,15 @@
+"""Train SAE - train a sparse autoencoder on saved activation chunks.
+
+Loads chunked activation tensors, builds the trainer config for the selected SAE
+architecture (jumprelu / standard / top_k / batch_top_k / matroyshka), runs the
+dictionary_learning training loop, and writes checkpoints. Each saved checkpoint
+gets a .meta.json sidecar recording its architecture and provenance so that
+utils.sae_io.load_sae can reload the right class.
+
+Usage (from repo root):
+  python -m sae_training.train_sae --activations_dir ./acts --val_activations_dir ./val
+"""
+
 from dictionary_learning import ActivationBuffer, AutoEncoder, JumpReluAutoEncoder
 from dictionary_learning.trainers import *
 from dictionary_learning.training import trainSAE
@@ -5,9 +17,12 @@ from torch.utils.data import DataLoader
 from utils.datasets.activations import ActivationsDataset
 import torch
 from pathlib import Path
+from typing import Iterator, Union
 import argparse
 
-def get_args_parser():
+
+def get_args_parser() -> argparse.ArgumentParser:
+    """Build the argument parser for the SAE training CLI."""
     parser = argparse.ArgumentParser("Train Sparse Autoencoder", add_help=False)
     parser.add_argument("--sae_model", default="jumprelu", type=str)
     parser.add_argument("--activations_dir", required=True, type=str)
@@ -31,7 +46,7 @@ def get_args_parser():
     parser.add_argument("--dead_penalty_coef", type=float, default=0.0)
     # TopK + Batch TopK
     parser.add_argument("--k", type=int, default=8)
-    parser.add_argument("--auxk_alpha", type=float, default=1/32)
+    parser.add_argument("--auxk_alpha", type=float, default=1 / 32)
     parser.add_argument("--decay_start", type=int, default=1_000_000)
     # Batch TopK
     parser.add_argument("--threshold_beta", type=float, default=0.999)
@@ -48,18 +63,33 @@ def get_args_parser():
 
     return parser
 
+
 class _DeviceDataLoader:
     """Wraps a DataLoader to move batches to the target device on the fly."""
-    def __init__(self, dataloader, device):
+
+    def __init__(self, dataloader: DataLoader, device: Union[str, torch.device]) -> None:
         self.dataloader = dataloader
         self.device = device
-    def __iter__(self):
+
+    def __iter__(self) -> Iterator[torch.Tensor]:
         for batch in self.dataloader:
             yield batch.to(self.device)
-    def __len__(self):
+
+    def __len__(self) -> int:
         return len(self.dataloader)
 
-def train_sae(args):
+
+def train_sae(args: argparse.Namespace) -> None:
+    """Train an SAE on the activation corpus and write self-describing checkpoints.
+
+    Loads the train and validation activation datasets, assembles the trainer config
+    for the requested SAE architecture, runs trainSAE, and writes a .meta.json sidecar
+    next to each checkpoint recording its architecture and provenance.
+
+    Args:
+        args: Parsed CLI arguments specifying the SAE model, data dirs, hyperparameters,
+            logging, and provenance fields.
+    """
     dataset = ActivationsDataset(args.activations_dir, device=torch.device("cpu"))
     dataloader = _DeviceDataLoader(
         DataLoader(dataset, batch_size=args.batch_size, shuffle=True), args.device
@@ -77,11 +107,11 @@ def train_sae(args):
     dictionary_size = args.expansion_factor * activation_dim
 
     trainers = {
-        'jumprelu': JumpReluTrainer,
-        'standard': StandardTrainer,
-        'batch_top_k': BatchTopKTrainer,
-        'top_k': TopKTrainer,
-        'matroyshka_batch_top_k': MatroyshkaBatchTopKTrainer,
+        "jumprelu": JumpReluTrainer,
+        "standard": StandardTrainer,
+        "batch_top_k": BatchTopKTrainer,
+        "top_k": TopKTrainer,
+        "matroyshka_batch_top_k": MatroyshkaBatchTopKTrainer,
     }
 
     # autoencoders = {
@@ -100,7 +130,7 @@ def train_sae(args):
         "steps": args.steps,
         "layer": "",
         "lm_name": "",
-        "submodule_name": ""
+        "submodule_name": "",
     }
 
     if args.sae_model == "jumprelu":
@@ -114,7 +144,11 @@ def train_sae(args):
         trainer_cfg["dead_feature_threshold"] = args.dead_feature_threshold
         trainer_cfg["dead_penalty_coef"] = args.dead_penalty_coef
         trainer_cfg["sparsity_warmup_steps"] = None
-    if args.sae_model == "top_k" or args.sae_model == "batch_top_k" or args.sae_model == "matroyshka_batch_top_k":
+    if (
+        args.sae_model == "top_k"
+        or args.sae_model == "batch_top_k"
+        or args.sae_model == "matroyshka_batch_top_k"
+    ):
         trainer_cfg["k"] = args.k
         trainer_cfg["auxk_alpha"] = args.auxk_alpha
         trainer_cfg["decay_start"] = args.decay_start
@@ -125,7 +159,10 @@ def train_sae(args):
         trainer_cfg["group_fractions"] = args.group_fractions
 
     dataset_name = Path(args.activations_dir).name
-    save_dir = Path(args.checkpoints_dir) / f"{dataset_name}_{args.sae_model}_{args.k}_x{args.expansion_factor}"
+    save_dir = (
+        Path(args.checkpoints_dir)
+        / f"{dataset_name}_{args.sae_model}_{args.k}_x{args.expansion_factor}"
+    )
     save_dir.mkdir(parents=True, exist_ok=True)
 
     use_wandb = not args.no_wandb and args.wandb_entity is not None
@@ -147,14 +184,23 @@ def train_sae(args):
     # layer the SAE was trained on, so utils.sae_io.load_sae can pick the right
     # class and fail clearly on a mismatch.
     from utils.sae_io import save_sae_meta
+
     for ckpt in save_dir.rglob("*.pt"):
-        save_sae_meta(ckpt, sae_type=args.sae_model,
-                      activation_dim=activation_dim, dict_size=dictionary_size,
-                      expansion_factor=args.expansion_factor,
-                      model_name=args.model_name, layer=args.layer,
-                      attachment_point=args.attachment_point,
-                      k=args.k if args.sae_model in ("top_k", "batch_top_k",
-                                                     "matroyshka_batch_top_k") else None)
+        save_sae_meta(
+            ckpt,
+            sae_type=args.sae_model,
+            activation_dim=activation_dim,
+            dict_size=dictionary_size,
+            expansion_factor=args.expansion_factor,
+            model_name=args.model_name,
+            layer=args.layer,
+            attachment_point=args.attachment_point,
+            k=(
+                args.k
+                if args.sae_model in ("top_k", "batch_top_k", "matroyshka_batch_top_k")
+                else None
+            ),
+        )
 
 
 if __name__ == "__main__":

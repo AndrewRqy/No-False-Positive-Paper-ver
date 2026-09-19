@@ -10,6 +10,7 @@ This lets every reported table ship as one checked-in, fully-specified config
 
     python -m nfp_testing.nfp_test --config configs/nfp_videomae_l11.yaml
 """
+
 import argparse
 import json
 import sys
@@ -25,8 +26,10 @@ def load_config(path):
         try:
             import yaml
         except ImportError as e:
-            raise ImportError("pyyaml is required for YAML configs "
-                              "(`pip install pyyaml`), or use a .json config") from e
+            raise ImportError(
+                "pyyaml is required for YAML configs "
+                "(`pip install pyyaml`), or use a .json config"
+            ) from e
         cfg = yaml.safe_load(text)
     else:
         cfg = json.loads(text)
@@ -36,9 +39,11 @@ def load_config(path):
 
 
 def add_config_arg(parser):
-    parser.add_argument("--config", default=None,
-                        help="YAML/JSON file of argument defaults; explicit CLI "
-                             "flags override it.")
+    parser.add_argument(
+        "--config",
+        default=None,
+        help="YAML/JSON file of argument defaults; explicit CLI " "flags override it.",
+    )
     return parser
 
 

@@ -1,6 +1,7 @@
 from transformers import AutoImageProcessor, Dinov2Model
 import torch
 
+
 class Dino:
     def __init__(self, model_name="dinov2-base", device=torch.device("cuda")):
         self.device = device
@@ -13,7 +14,9 @@ class Dino:
 
     def attach(self, attachment_point, layer, sae=None):
         if attachment_point != "pooler_output":
-            raise NotImplementedError(f"Attachment point '{attachment_point}' not implemented for Dino")
+            raise NotImplementedError(
+                f"Attachment point '{attachment_point}' not implemented for Dino"
+            )
         self._attached = True
         self._attach_key = f"{attachment_point}_{layer}"
         self._sae = sae

@@ -1,5 +1,4 @@
-"""
-Experiment A — steer a temporal SAE feature and read VideoMAE's own SSv2 logits.
+"""Experiment A - steer a temporal SAE feature and read VideoMAE's own SSv2 logits.
 
 Recipe (clamp + re-add reconstruction error, on the layer-11 post-MLP residual where the
 SAE was trained):
@@ -17,13 +16,15 @@ classes ("slightly moves", "almost doesn't move", "pretending to"). Summary read
 Controls: sign-flip (clamp to 0), N random-feature clamps (null distribution), and the
 speed feature (feat02818) for an accel-vs-speed comparison.
 
-Usage (from sae-for-vlm/):
-  python analysis/steer_ssv2_logits.py --n_videos 64 --features 5087 2818
+Usage (from repo root):
+  python -m causal_analysis.common.steer_ssv2_logits --n_videos 64 --features 5087 2818
 """
+
 import argparse
 import json
 import sys
 from pathlib import Path
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 import numpy as np
 import torch
@@ -40,7 +41,7 @@ N_FRAMES = 16
 # Publication default: a decode failure must NOT be silently turned into a black
 # video with the real label (that corrupts every metric computed over it). Fail
 # closed. Entry points may set this to "zero" for diagnostics (review item 8).
-DEFAULT_DECODE_ERROR = "raise"   # {"raise", "zero"}
+DEFAULT_DECODE_ERROR = "raise"  # {"raise", "zero"}
 
 
 class SSv2Frames(Dataset):
@@ -53,7 +54,24 @@ class SSv2Frames(Dataset):
                            `self.failed_ids` so the count can be saved and
                            compared across conditions.
     """
-    def __init__(self, videos_dir, val_json, n, seed=0, decode_error=None):
+
+    def __init__(
+        self,
+        videos_dir: str,
+        val_json: str,
+        n: int,
+        seed: int = 0,
+        decode_error: Optional[str] = None,
+    ) -> None:
+        """Sample n validation items and configure the decode-failure policy.
+
+        Args:
+            videos_dir: Directory holding the source webm clips.
+            val_json: Path to the SSv2 validation labels JSON.
+            n: Number of clips to sample (capped at the dataset size).
+            seed: Seed for the item-sampling RandomState.
+            decode_error: "raise" or "zero"; None falls back to DEFAULT_DECODE_ERROR.
+        """
         val = json.load(open(val_json))
         rng = np.random.RandomState(seed)
         sel = rng.choice(len(val), size=min(n, len(val)), replace=False)
@@ -62,11 +80,24 @@ class SSv2Frames(Dataset):
         self.decode_error = decode_error or DEFAULT_DECODE_ERROR
         self.failed_ids = []
 
-    def __len__(self):
+    def __len__(self) -> int:
+        """Number of clips in the dataset."""
         return len(self.items)
 
-    def __getitem__(self, i):
+    def __getitem__(self, i: int) -> Tuple[List[Image.Image], Any, str]:
+        """Decode clip `i` to 16 frames, returning (frames, id, template).
+
+        Args:
+            i: Index into the sampled items.
+
+        Returns:
+            A tuple of the 16 decoded RGB frames, the clip id, and its template.
+
+        Raises:
+            RuntimeError: If decoding fails and `decode_error` is "raise".
+        """
         import av
+
         it = self.items[i]
         path = self.dir / f"{it['id']}.webm"
         try:
@@ -78,29 +109,75 @@ class SSv2Frames(Dataset):
         except Exception as e:
             if self.decode_error == "raise":
                 raise RuntimeError(f"failed to decode video {path}: {e}") from e
-            self.failed_ids.append(it["id"])   # "zero": gray fallback, but recorded
+            self.failed_ids.append(it["id"])  # "zero": gray fallback, but recorded
             imgs = [Image.new("RGB", (224, 224)) for _ in range(N_FRAMES)]
         return imgs, it["id"], it.get("template", "")
 
 
-def ssv2_collate(processor):
-    def c(batch):
+def ssv2_collate(processor: Any) -> Callable:
+    """Build a collate function that batches decoded clips through the processor.
+
+    Args:
+        processor: The VideoMAE image processor.
+
+    Returns:
+        A collate callable mapping a list of (frames, id, template) items to
+        (processor inputs, ids, templates).
+    """
+
+    def c(batch: List[Any]) -> Tuple[Any, List[Any], List[Any]]:
         inputs = processor(images=[b[0] for b in batch], return_tensors="pt")
         return inputs, [b[1] for b in batch], [b[2] for b in batch]
+
     return c
+
 
 # SSv2 class keyword sets (matched case-insensitively against id2label).
 # A label counts FAST only if it hits a FAST kw and no SLOW kw (so "push so it slightly
 # moves" is SLOW, not FAST).
-FAST_KW = ["throwing", "hitting", "falls off", "falls over", "falls down", "tipping",
-           "so that it falls", "until it breaks", "tearing", "kicking", "dropping",
-           "quickly stops spinning", "knocking", "slamming", "collides"]
-SLOW_KW = ["slightly moves", "almost doesn't move", "doesn't move", "so lightly",
-           "pretending", "without letting", "continues spinning", "letting something roll",
-           "barely", "a little"]
+FAST_KW = [
+    "throwing",
+    "hitting",
+    "falls off",
+    "falls over",
+    "falls down",
+    "tipping",
+    "so that it falls",
+    "until it breaks",
+    "tearing",
+    "kicking",
+    "dropping",
+    "quickly stops spinning",
+    "knocking",
+    "slamming",
+    "collides",
+]
+SLOW_KW = [
+    "slightly moves",
+    "almost doesn't move",
+    "doesn't move",
+    "so lightly",
+    "pretending",
+    "without letting",
+    "continues spinning",
+    "letting something roll",
+    "barely",
+    "a little",
+]
 
 
-def build_fast_slow(id2label):
+def build_fast_slow(id2label: Dict[Any, str]) -> Tuple[List[int], List[int]]:
+    """Split SSv2 classes into FAST and SLOW sets by keyword matching.
+
+    A label counts FAST only if it hits a FAST keyword and no SLOW keyword, so
+    hedged labels like "push so it slightly moves" resolve to SLOW.
+
+    Args:
+        id2label: Mapping from class index to human-readable label.
+
+    Returns:
+        A tuple (fast, slow) of class-index lists.
+    """
     fast, slow = [], []
     for i, lab in id2label.items():
         L = lab.lower()
@@ -114,25 +191,40 @@ def build_fast_slow(id2label):
 
 
 class SteerLayer(nn.Module):
-    """Wrap encoder.layer[L]; optionally clamp one SAE feature in the residual output."""
-    def __init__(self, base, sae):
+    """Wrap encoder.layer[L] and optionally intervene on the residual output.
+
+    A drop-in replacement for one transformer encoder layer that runs the wrapped
+    base layer and then applies at most one configured intervention to its output
+    activations before returning. The supported interventions (recording, additive
+    steering, SAE reconstruction, subspace erasure, token-level feature patching,
+    and single-feature clamping) are toggled through instance attributes so the
+    same installed layer can serve every stage of the causal battery.
+    """
+
+    def __init__(self, base: nn.Module, sae: nn.Module) -> None:
+        """Wrap `base` and hold a reference to the SAE used for interventions.
+
+        Args:
+            base: The original encoder layer to wrap.
+            sae: The (unit-norm) SAE whose encode/decode drive the interventions.
+        """
         super().__init__()
         self.base, self.sae = base, sae
         self.enabled = False
         self.k = None
         self.s = 0.0
-        self.record = False          # capture per-clip mean-pooled feature activations
-        self.record_raw = False      # capture per-clip mean-pooled RAW residual (768-d)
-        self.add_vec = None          # if set, add this [768] vector to the residual (all tokens)
+        self.record = False  # capture per-clip mean-pooled feature activations
+        self.record_raw = False  # capture per-clip mean-pooled RAW residual (768-d)
+        self.add_vec = None  # if set, add this [768] vector to the residual (all tokens)
         self.captured = []
         self.captured_raw = []
         # token-level patching (interchange interventions): record_tokens_idx captures the
         # FULL token grid of activations for a feature subset; patch_idx/patch_vals replace
         # those features' activations with donor values (natural range, unlike clamping).
-        self.record_tokens_idx = None   # LongTensor [K] -> capture f[..., idx] as [B,1568,K]
+        self.record_tokens_idx = None  # LongTensor [K] -> capture f[..., idx] as [B,1568,K]
         self.captured_tokens = []
-        self.patch_idx = None           # LongTensor [K]
-        self.patch_vals = None          # tensor [B, 1568, K] (donor activations)
+        self.patch_idx = None  # LongTensor [K]
+        self.patch_vals = None  # tensor [B, 1568, K] (donor activations)
         # subspace erasure: if set to a [768,768] projector P onto a subspace,
         # every token is replaced by x - P x (the subspace is projected out).
         self.proj_out = None
@@ -143,7 +235,22 @@ class SteerLayer(nn.Module):
         # the reconstruction error (pure-SAE pipeline)
         self.no_readd = False
 
-    def forward(self, hidden_states, *args, **kwargs):
+    def forward(self, hidden_states: torch.Tensor, *args: Any, **kwargs: Any) -> Any:
+        """Run the base layer, then apply the configured intervention to its output.
+
+        The intervention is selected by whichever instance flags are set (recording,
+        additive steer, reconstruction, subspace erasure, token patching, or feature
+        clamping). The base layer's return type (bare tensor vs tuple) is preserved.
+
+        Args:
+            hidden_states: Input residual-stream activations for the layer.
+            *args: Extra positional arguments forwarded to the base layer.
+            **kwargs: Extra keyword arguments forwarded to the base layer (an
+                incoming `head_mask` is dropped).
+
+        Returns:
+            The (possibly intervened) layer output, matching the base layer's type.
+        """
         kwargs.pop("head_mask", None)
         out = self.base(hidden_states, *args, **kwargs)
         is_tuple = isinstance(out, tuple)
@@ -153,9 +260,9 @@ class SteerLayer(nn.Module):
             with torch.no_grad():
                 self.captured.append(self.sae.encode(acts).mean(1).detach().cpu())  # [B, dict]
         if self.record_raw:
-            self.captured_raw.append(acts.mean(1).detach().cpu())                   # [B, 768]
+            self.captured_raw.append(acts.mean(1).detach().cpu())  # [B, 768]
         if self.add_vec is not None:
-            acts = acts + self.add_vec.to(acts.dtype).to(acts.device)               # diff-of-means steer
+            acts = acts + self.add_vec.to(acts.dtype).to(acts.device)  # diff-of-means steer
         if self.reconstruct:
             acts = self.sae.decode(self.sae.encode(acts))
         if self.proj_out is not None:
@@ -179,24 +286,33 @@ class SteerLayer(nn.Module):
             f = f.clone()
             f[..., self.k] = self.s
             acts = self.sae.decode(f) if self.no_readd else self.sae.decode(f) + e
-        # preserve the base layer's return type (bare tensor vs tuple) — the classifier
+        # preserve the base layer's return type (bare tensor vs tuple) - the classifier
         # head does sequence_output.mean(1), so a stray 1-tuple would break it.
         return ((acts,) + rest) if is_tuple else acts
 
 
-def main():
+def main() -> None:
+    """Run the Experiment A feature-steering sweep and save the results JSON."""
     ap = argparse.ArgumentParser()
     ap.add_argument("--model_name", default="MCG-NJU/videomae-base-finetuned-ssv2")
     ap.add_argument("--sae_path", default="local_runs/sae/ae.pt")
     ap.add_argument("--feat_acts", default="local_runs/nfp_results/sae_feat_acts.pt")
-    ap.add_argument("--input", default="ssv2", choices=["ssv2", "balls"],
-                    help="ssv2 = real SSv2-val clips (in-distribution); balls = synthetic NFP set")
+    ap.add_argument(
+        "--input",
+        default="ssv2",
+        choices=["ssv2", "balls"],
+        help="ssv2 = real SSv2-val clips (in-distribution); balls = synthetic NFP set",
+    )
     ap.add_argument("--dataset_dir", default="data/output/nfp", help="for --input balls")
     ap.add_argument("--ssv2_videos", default="../SSv2/videos")
-    ap.add_argument("--ssv2_val_json",
-                    default="../SSv2/raw/20bn-something-something-download-package-labels/labels/validation.json")
-    ap.add_argument("--labels_json",
-                    default="../SSv2/raw/20bn-something-something-download-package-labels/labels/labels.json")
+    ap.add_argument(
+        "--ssv2_val_json",
+        default="../SSv2/raw/20bn-something-something-download-package-labels/labels/validation.json",
+    )
+    ap.add_argument(
+        "--labels_json",
+        default="../SSv2/raw/20bn-something-something-download-package-labels/labels/labels.json",
+    )
     ap.add_argument("--seed", default=0, type=int)
     ap.add_argument("--layer", default=11, type=int)
     ap.add_argument("--features", nargs="*", type=int, default=[5087, 2818])
@@ -213,10 +329,15 @@ def main():
     id2label = clf.config.id2label
     fast, slow = build_fast_slow(id2label)
     print(f"SSv2 classes: {len(id2label)} | FAST set: {len(fast)} | SLOW set: {len(slow)}")
-    print("  FAST e.g.:", [id2label[str(i)] if str(i) in id2label else id2label[i] for i in fast[:5]])
-    print("  SLOW e.g.:", [id2label[str(i)] if str(i) in id2label else id2label[i] for i in slow[:5]])
+    print(
+        "  FAST e.g.:", [id2label[str(i)] if str(i) in id2label else id2label[i] for i in fast[:5]]
+    )
+    print(
+        "  SLOW e.g.:", [id2label[str(i)] if str(i) in id2label else id2label[i] for i in slow[:5]]
+    )
 
-    sae = AutoEncoder.from_pretrained(args.sae_path, device=device); sae.eval()
+    sae = AutoEncoder.from_pretrained(args.sae_path, device=device)
+    sae.eval()
     steer = SteerLayer(clf.videomae.encoder.layer[args.layer], sae).to(device)
     clf.videomae.encoder.layer[args.layer] = steer
 
@@ -230,13 +351,27 @@ def main():
     proc = VideoMAEImageProcessor.from_pretrained(args.model_name)
     if args.input == "ssv2":
         ds = SSv2Frames(args.ssv2_videos, args.ssv2_val_json, args.n_videos, args.seed)
-        dl = DataLoader(ds, batch_size=args.batch_size, shuffle=False, num_workers=0,
-                        collate_fn=ssv2_collate(proc))
+        dl = DataLoader(
+            ds,
+            batch_size=args.batch_size,
+            shuffle=False,
+            num_workers=0,
+            collate_fn=ssv2_collate(proc),
+        )
         print(f"Input: {len(ds)} real SSv2-val clips")
     else:
+        # Imported locally so that importing this module as a library does not pull
+        # in nfp_testing; the ball-video demo path needs the NFP dataset loader.
+        from nfp_testing.nfp_test import NFPDataset, make_collate
+
         ds = Subset(NFPDataset(Path(args.dataset_dir)), list(range(min(args.n_videos, 3000))))
-        dl = DataLoader(ds, batch_size=args.batch_size, shuffle=False, num_workers=0,
-                        collate_fn=make_collate(proc))
+        dl = DataLoader(
+            ds,
+            batch_size=args.batch_size,
+            shuffle=False,
+            num_workers=0,
+            collate_fn=make_collate(proc),
+        )
         print(f"Input: {len(ds)} synthetic ball clips (OOD for SSv2 classifier)")
 
     fast_t = torch.tensor(fast, device=device)
@@ -251,28 +386,36 @@ def main():
             tmpl_all += batch[2]
     print(f"cached pixel_values for {sum(b.shape[0] for b in cached)} clips")
 
-    def all_probs():
+    def all_probs() -> torch.Tensor:
+        """Softmax class probabilities over all cached clips under current steering."""
         outs = []
         for pv in cached:
             with torch.no_grad():
                 outs.append(torch.softmax(clf(pixel_values=pv.to(device)).logits, dim=-1).cpu())
         return torch.cat(outs, 0)
 
-    def force_shift(dP):
+    def force_shift(dP: torch.Tensor) -> float:
+        """Mean FAST-minus-SLOW probability shift for a per-clip probability delta."""
         return float(dP[:, fast_t.cpu()].sum(1).mean() - dP[:, slow_t.cpu()].sum(1).mean())
 
-    results = {"input": args.input, "scale": scale, "conditions": [],
-               "fast_classes": [id2label.get(str(i), id2label.get(i)) for i in fast],
-               "slow_classes": [id2label.get(str(i), id2label.get(i)) for i in slow]}
+    results = {
+        "input": args.input,
+        "scale": scale,
+        "conditions": [],
+        "fast_classes": [id2label.get(str(i), id2label.get(i)) for i in fast],
+        "slow_classes": [id2label.get(str(i), id2label.get(i)) for i in slow],
+    }
 
     steer.enabled = False
     base = all_probs()
     results["n_videos"] = int(base.shape[0])
-    print(f"\nbaseline computed on {base.shape[0]} videos. "
-          f"baseline FAST mass={base[:, fast].sum(1).mean():.4f} "
-          f"SLOW mass={base[:, slow].sum(1).mean():.4f}")
+    print(
+        f"\nbaseline computed on {base.shape[0]} videos. "
+        f"baseline FAST mass={base[:, fast].sum(1).mean():.4f} "
+        f"SLOW mass={base[:, slow].sum(1).mean():.4f}"
+    )
     if args.input == "ssv2":
-        label2idx = {v: int(k) for k, v in id2label.items()}   # classifier's own bracketed labels
+        label2idx = {v: int(k) for k, v in id2label.items()}  # classifier's own bracketed labels
         gt = [label2idx.get(t, -1) for t in tmpl_all]
         pred = base.argmax(1).numpy()
         ok = [(int(p) == g) for p, g in zip(pred, gt) if g >= 0]
@@ -281,39 +424,73 @@ def main():
         results["baseline_top1_acc"] = acc
 
     rng = np.random.RandomState(0)
-    rand_feats = rng.choice([k for k in range(sae.dict_size) if k not in args.features],
-                            size=args.n_random, replace=False).tolist()
+    rand_feats = rng.choice(
+        [k for k in range(sae.dict_size) if k not in args.features],
+        size=args.n_random,
+        replace=False,
+    ).tolist()
 
-    def run(label, k, s):
-        steer.enabled = True; steer.k = k; steer.s = s
+    def run(label: str, k: int, s: float) -> float:
+        """Clamp feature `k` to `s`, record the shift, and return its force_shift.
+
+        Args:
+            label: Condition label stored in the results record.
+            k: Feature index to clamp.
+            s: Clamp value along the feature's decoder direction.
+
+        Returns:
+            The FAST-minus-SLOW force_shift for this condition.
+        """
+        steer.enabled = True
+        steer.k = k
+        steer.s = s
         P = all_probs()
         steer.enabled = False
         dP = P - base
         fs = force_shift(dP)
         top = (dP.mean(0)).numpy()
-        up = np.argsort(-top)[:5]; dn = np.argsort(top)[:5]
-        rec = {"label": label, "feature": k, "s": round(s, 3), "force_shift": round(fs, 5),
-               "top_up": [(id2label.get(str(i), id2label.get(i)), round(float(top[i]), 4)) for i in up],
-               "top_down": [(id2label.get(str(i), id2label.get(i)), round(float(top[i]), 4)) for i in dn]}
+        up = np.argsort(-top)[:5]
+        dn = np.argsort(top)[:5]
+        rec = {
+            "label": label,
+            "feature": k,
+            "s": round(s, 3),
+            "force_shift": round(fs, 5),
+            "top_up": [
+                (id2label.get(str(i), id2label.get(i)), round(float(top[i]), 4)) for i in up
+            ],
+            "top_down": [
+                (id2label.get(str(i), id2label.get(i)), round(float(top[i]), 4)) for i in dn
+            ],
+        }
         results["conditions"].append(rec)
-        print(f"  {label:28s} force_shift={fs:+.5f}  up:{rec['top_up'][0]}  down:{rec['top_down'][0]}")
+        print(
+            f"  {label:28s} force_shift={fs:+.5f}  up:{rec['top_up'][0]}  down:{rec['top_down'][0]}"
+        )
         return fs
 
     print("\n=== TARGET FEATURES (s-sweep) ===")
     for k in args.features:
         for m in args.s_mults:
             run(f"feat{k}_s{m:g}x", k, scale[k] * m)
-        run(f"feat{k}_signflip0", k, 0.0)   # clamp to 0 -> expect opposite shift
+        run(f"feat{k}_signflip0", k, 0.0)  # clamp to 0 -> expect opposite shift
 
     print("\n=== RANDOM-FEATURE CONTROLS (at 3x scale of feat0) ===")
     s_ctrl = scale[args.features[0]] * 3.0
     null = [run(f"rand_feat{k}", k, s_ctrl) for k in rand_feats]
     null = np.array(null)
     nm, ns = float(null.mean()), float(null.std())
-    print(f"\nrandom-feature force_shift null: mean={nm:+.5f} std={ns:.5f} "
-          f"range=[{null.min():+.5f},{null.max():+.5f}]")
-    results["null"] = {"mean": nm, "std": ns, "n": len(null),
-                       "features": rand_feats, "values": null.tolist()}
+    print(
+        f"\nrandom-feature force_shift null: mean={nm:+.5f} std={ns:.5f} "
+        f"range=[{null.min():+.5f},{null.max():+.5f}]"
+    )
+    results["null"] = {
+        "mean": nm,
+        "std": ns,
+        "n": len(null),
+        "features": rand_feats,
+        "values": null.tolist(),
+    }
 
     print("\n=== TARGET force_shift as z-score vs random-feature null ===")
     for rec in results["conditions"]:

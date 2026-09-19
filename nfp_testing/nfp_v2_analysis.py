@@ -1,5 +1,5 @@
 """
-Experiment F3 — NFP on the v2 decorrelated dataset, compared head-to-head with v1.
+Experiment F3 - NFP on the v2 decorrelated dataset, compared head-to-head with v1.
 
 Same SAE (trained on SSv2 activations, unchanged), same NFP statistic, same Bonferroni
 bar; the only change is the probe stimulus (v2: all 10 pairwise tau couplings zeroed by
@@ -13,9 +13,10 @@ Predictions being tested (from FINDINGS steps 34-36):
 Also reported: flag-set overlap v1 vs v2, per-tau breakdowns, the full selectivity
 matrix, and the c_bar pairwise cosine matrix for v2.
 
-Usage (from sae-for-vlm/):
+Usage (from repo root):
   python analysis/nfp_v2_analysis.py
 """
+
 import argparse
 import json
 import sys
@@ -40,7 +41,8 @@ def nfp_stats(ball, tau, mask, sae, device):
     tau_c = tau - tau.mean(1, keepdim=True)
     C = torch.einsum("btd,btk->bdk", psi_c, tau_c).numpy() / T
     D = C.shape[1]
-    t = np.zeros((D, 5), np.float32); p = np.ones_like(t)
+    t = np.zeros((D, 5), np.float32)
+    p = np.ones_like(t)
     for k in range(5):
         t[:, k], p[:, k] = stats.ttest_1samp(C[:, :, k], 0.0)
     return C, t, p
@@ -86,7 +88,8 @@ def main():
     ap.add_argument("--out", default="local_runs/steering/expF3_nfp_v2.json")
     args = ap.parse_args()
     device = torch.device(args.device)
-    sae = AutoEncoder.from_pretrained(args.sae_path, device=device); sae.eval()
+    sae = AutoEncoder.from_pretrained(args.sae_path, device=device)
+    sae.eval()
     bonf = 0.05 / sae.dict_size
 
     out = {}
@@ -98,9 +101,11 @@ def main():
         C, t, p = nfp_stats(ball, tau, mask, sae, device)
         sig, dom, diag = report(tag, C, t, p, tau, bonf)
         results[tag] = {"sig": sig, "dom": dom}
-        out[tag] = {"n_flagged": len(sig),
-                    "per_tau_dominant": {n: sum(1 for i in sig if dom[i] == n) for n in TAU},
-                    "diag_dominant": diag}
+        out[tag] = {
+            "n_flagged": len(sig),
+            "per_tau_dominant": {n: sum(1 for i in sig if dom[i] == n) for n in TAU},
+            "diag_dominant": diag,
+        }
         # c_bar for this stimulus
         hc = ball - ball.mean(1, keepdim=True)
         tc = tau - tau.mean(1, keepdim=True)
@@ -116,15 +121,15 @@ def main():
         print(f"  {tag}:")
         for i, n in enumerate(TAU):
             print(f"    {n:<10}" + "".join(f"{cosm[i, j]:+8.2f}" for j in range(5)))
-        out[tag]["cbar_cos_dir_vely"] = round(float(cosm[TAU.index("direction"),
-                                                         TAU.index("vel_y")]), 3)
+        out[tag]["cbar_cos_dir_vely"] = round(
+            float(cosm[TAU.index("direction"), TAU.index("vel_y")]), 3
+        )
 
     # flag overlap
     s1, s2 = set(results["v1"]["sig"]), set(results["v2"]["sig"])
     print(f"\nflag overlap: v1={len(s1)}, v2={len(s2)}, intersection={len(s1 & s2)}")
     out["overlap"] = {"v1": len(s1), "v2": len(s2), "both": len(s1 & s2)}
-    new_dir = [i for i in results["v2"]["sig"]
-               if results["v2"]["dom"][i] == "direction"]
+    new_dir = [i for i in results["v2"]["sig"] if results["v2"]["dom"][i] == "direction"]
     print(f"v2 direction-dominant features: {sorted(new_dir)}")
     out["v2_direction_features"] = sorted(new_dir)
 

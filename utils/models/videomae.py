@@ -23,7 +23,9 @@ class VideoMAE:
 
     def attach(self, attachment_point, layer, sae=None):
         if attachment_point not in self.attach_methods:
-            raise NotImplementedError(f"Attachment point '{attachment_point}' not implemented for VideoMAE")
+            raise NotImplementedError(
+                f"Attachment point '{attachment_point}' not implemented for VideoMAE"
+            )
         self.attach_methods[attachment_point](layer, sae)
         self.register[f"{attachment_point}_{layer}"] = []
 
@@ -53,7 +55,7 @@ class VideoMAELayerPostMlpResidual(nn.Module):
         # Some transformers versions pass head_mask positionally
         # (layer_module(hidden_states, layer_head_mask)), others as a kwarg.
         # Forward whatever we got to the base layer; head masking is unused here.
-        kwargs.pop('head_mask', None)
+        kwargs.pop("head_mask", None)
         outputs = self.base_layer(hidden_states, *args, **kwargs)
 
         is_tuple = not isinstance(outputs, torch.Tensor)

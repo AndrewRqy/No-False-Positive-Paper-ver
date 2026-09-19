@@ -3,6 +3,7 @@ from torch.utils.data import Dataset
 import os
 import bisect
 
+
 class ChunkedActivationsDataset(Dataset):
     def __init__(self, directory, transform=None, device="cpu"):
         """
@@ -13,8 +14,8 @@ class ChunkedActivationsDataset(Dataset):
         """
         self.directory = directory
         self.files = sorted(
-            (f for f in os.listdir(directory) if f.endswith('.pth') or f.endswith('.pt')),
-            key=lambda x: int(x.split('_part')[-1].split('.pt')[0])
+            (f for f in os.listdir(directory) if f.endswith(".pth") or f.endswith(".pt")),
+            key=lambda x: int(x.split("_part")[-1].split(".pt")[0]),
         )
         self.transform = transform
         self.device = device
@@ -110,8 +111,12 @@ class ActivationsDataset(Dataset):
         """
         self.directory = directory
         self.files = sorted(
-            (f for f in os.listdir(directory) if (f.endswith('.pth') or f.endswith('.pt')) and not f.startswith('all')),
-            key=lambda x: int(x.split('_part')[-1].split('.pt')[0])
+            (
+                f
+                for f in os.listdir(directory)
+                if (f.endswith(".pth") or f.endswith(".pt")) and not f.startswith("all")
+            ),
+            key=lambda x: int(x.split("_part")[-1].split(".pt")[0]),
         )
         self.transform = transform
         self.device = device

@@ -10,6 +10,7 @@ Modes:
            save float32 feature chunks with labels
   train    fit a 174-way softmax linear probe on the saved features
 """
+
 import argparse
 import json
 import sys
@@ -25,6 +26,7 @@ from causal_analysis.common.steer_pair_screen import ItemFrames  # noqa: E402
 
 class Collate:
     """Module-level and picklable so Windows dataloader workers can spawn."""
+
     def __init__(self, proc):
         self.proc = proc
 
@@ -36,15 +38,20 @@ class Collate:
 
 def extract(args, device):
     from transformers import VideoMAEModel, VideoMAEImageProcessor
+
     model = VideoMAEModel.from_pretrained(args.model_name).to(device).eval()
     proc = VideoMAEImageProcessor.from_pretrained(args.model_name)
-    items = json.load(open(args.items_json, encoding='utf-8'))
+    items = json.load(open(args.items_json, encoding="utf-8"))
     if args.max_clips > 0:
         items = items[: args.max_clips]
     print(f"extracting {len(items)} clips")
-    dl = DataLoader(ItemFrames(args.ssv2_videos, items), batch_size=args.batch,
-                    shuffle=False, num_workers=args.num_workers,
-                    collate_fn=Collate(proc))
+    dl = DataLoader(
+        ItemFrames(args.ssv2_videos, items),
+        batch_size=args.batch,
+        shuffle=False,
+        num_workers=args.num_workers,
+        collate_fn=Collate(proc),
+    )
     out = Path(args.out)
     out.parent.mkdir(parents=True, exist_ok=True)
     feats, tpls = [], []
@@ -64,6 +71,7 @@ def extract(args, device):
 
 def train(args, device):
     from transformers import VideoMAEForVideoClassification
+
     ref = VideoMAEForVideoClassification.from_pretrained("MCG-NJU/videomae-base-finetuned-ssv2")
     label2idx = {v: int(k) for k, v in ref.config.id2label.items()}
     del ref
@@ -78,7 +86,7 @@ def train(args, device):
     for ep in range(args.epochs):
         perm = torch.randperm(len(yt), device=device)
         for i in range(0, len(yt), 8192):
-            idx = perm[i:i + 8192]
+            idx = perm[i : i + 8192]
             loss = torch.nn.functional.cross_entropy(lin(Xt[idx]), yt[idx])
             opt.zero_grad()
             loss.backward()
@@ -86,8 +94,10 @@ def train(args, device):
         with torch.no_grad():
             acc = (lin(Xv).argmax(-1) == yv).float().mean().item()
         print(f"epoch {ep + 1}: heldout acc {acc:.4f}")
-    torch.save({"weight": lin.weight.detach().cpu(), "bias": lin.bias.detach().cpu(),
-                "heldout_acc": acc}, args.probe_out)
+    torch.save(
+        {"weight": lin.weight.detach().cpu(), "bias": lin.bias.detach().cpu(), "heldout_acc": acc},
+        args.probe_out,
+    )
     print(f"probe saved -> {args.probe_out}")
 
 

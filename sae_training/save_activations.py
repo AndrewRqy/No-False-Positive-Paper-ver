@@ -1,9 +1,21 @@
+"""Save SAE Activations - dump model activations (optionally SAE-encoded) to disk.
+
+Runs a vision or video encoder over a dataset, pools or flattens the tokens per the
+CLI flags, and writes the resulting activation tensors in chunked *_part*.pt files
+for downstream SAE training or analysis. An optional pretrained SAE can be attached
+so that SAE feature activations are saved instead of the raw encoder activations.
+
+Usage (from repo root):
+  python -m sae_training.save_activations --dataset_name imagenet --output_dir ./out
+"""
+
 import numpy as np
 import torch
 import os
+import argparse
+from typing import List
 from torch.utils.data import DataLoader
 import tqdm
-import argparse
 from pathlib import Path
 from torchvision.datasets import ImageFolder
 from utils import get_dataset, get_model
@@ -12,7 +24,8 @@ from dictionary_learning import AutoEncoder
 from dictionary_learning.trainers import BatchTopKSAE, MatroyshkaBatchTopKSAE
 
 
-def get_args_parser():
+def get_args_parser() -> argparse.ArgumentParser:
+    """Build the argument parser for the activation-saving CLI."""
     parser = argparse.ArgumentParser("Save activations used to train SAE", add_help=False)
     parser.add_argument("--batch_size", default=128, type=int)
     parser.add_argument("--sae_model", default=None, type=str)
@@ -32,25 +45,45 @@ def get_args_parser():
     parser.add_argument("--random_k", default=-1, type=int)
     parser.add_argument("--save_every", default=50_000, type=int)
     parser.add_argument("--max_clips", default=-1, type=int)
-    parser.add_argument("--frames_per_clip", default=1, type=int,
-                        help="Frames flattened per clip in the batch (e.g. 16 for ssv2_dino). "
-                             "Divides pixel_values.shape[0] so max_clips counts videos, not frames.")
+    parser.add_argument(
+        "--frames_per_clip",
+        default=1,
+        type=int,
+        help="Frames flattened per clip in the batch (e.g. 16 for ssv2_dino). "
+        "Divides pixel_values.shape[0] so max_clips counts videos, not frames.",
+    )
     parser.add_argument("--device", default="cuda:0")
     parser.add_argument("--save_dtype", default="float32", choices=["float32", "float16"])
     return parser
 
-def save_activations(activations, count, split, save_count, args):
+
+def save_activations(
+    activations: List[torch.Tensor],
+    count: int,
+    split: str,
+    save_count: int,
+    args: argparse.Namespace,
+) -> None:
+    """Pool or flatten a batch of activations and write one chunk file to disk.
+
+    Args:
+        activations: List of per-batch activation tensors to concatenate.
+        count: Running number of data points processed (used in the log line).
+        split: Dataset split name embedded in the output filename.
+        save_count: Zero-based index of this chunk, used for the part number.
+        args: Parsed CLI arguments controlling pooling, dtype, and output dir.
+    """
     activations_tensor = torch.cat(activations, dim=0)
     if args.take_every > 1:
         # Pick every n-th activation in the batch
-        activations_tensor = activations_tensor[::args.take_every, :, :]
+        activations_tensor = activations_tensor[:: args.take_every, :, :]
 
     if args.layer == -1:
         # Tokens already pooled
         activations_tensor = activations_tensor
     elif args.cls_only:
         # Keep only CLS token
-        activations_tensor =  activations_tensor[:, 0, :]
+        activations_tensor = activations_tensor[:, 0, :]
     elif args.mean_pool:
         activations_tensor = torch.mean(activations_tensor, dim=1)
     elif args.max_pool:
@@ -59,12 +92,15 @@ def save_activations(activations, count, split, save_count, args):
         # Treat each token as a separate data point but pick random k tokens from each image
         batch_size, seq_len, hidden_dim = activations_tensor.shape
         indices = torch.randint(0, seq_len, (batch_size, args.random_k))
-        activations_tensor = torch.stack([activations_tensor[i, indices[i], :] for i in range(batch_size)])
+        activations_tensor = torch.stack(
+            [activations_tensor[i, indices[i], :] for i in range(batch_size)]
+        )
         activations_tensor = activations_tensor.reshape(-1, hidden_dim)
     else:
         # Treat each token as a separate data point and use all the tokens
-        activations_tensor = activations_tensor.reshape(activations_tensor.shape[0] * activations_tensor.shape[1],
-                                                        activations_tensor.shape[2])
+        activations_tensor = activations_tensor.reshape(
+            activations_tensor.shape[0] * activations_tensor.shape[1], activations_tensor.shape[2]
+        )
 
     model_name_safe = args.model_name.replace("/", "_")
     filename = f"{args.dataset_name}_{split}_activations_{model_name_safe}_{args.layer}_{args.attachment_point}_part{save_count + 1}.pt"
@@ -75,7 +111,17 @@ def save_activations(activations, count, split, save_count, args):
     torch.save(out_tensor, save_path)
     print(f"Saved the activations at count {count} to {save_path}")
 
-def collect_activations(args):
+
+def collect_activations(args: argparse.Namespace) -> None:
+    """Run the encoder over the dataset and stream activation chunks to disk.
+
+    Attaches an optional pretrained SAE at the configured attachment point, iterates
+    the dataloader, accumulates activations, and flushes a chunk file every
+    save_every data points (plus a final partial chunk).
+
+    Args:
+        args: Parsed CLI arguments specifying the model, dataset, SAE, and I/O.
+    """
     model, processor = get_model(args)
 
     if args.sae_model is not None:
@@ -105,9 +151,9 @@ def collect_activations(args):
             model.encode(image)
             activations.extend(model.register[f"{args.attachment_point}_{args.layer}"])
 
-        pv = image['pixel_values'] if 'pixel_values' in image else image['pixel_values_videos']
+        pv = image["pixel_values"] if "pixel_values" in image else image["pixel_values_videos"]
         count += pv.shape[0] // args.frames_per_clip
-        pbar.set_postfix({'Processed data points': count})
+        pbar.set_postfix({"Processed data points": count})
 
         if count >= args.save_every * (save_count + 1):
             save_activations(activations, count, args.split, save_count, args)

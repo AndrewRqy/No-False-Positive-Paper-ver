@@ -1,4 +1,4 @@
-"""Binary-discrimination span-erasure experiment on temporal class pairs.
+"""Binary Erasure - binary-discrimination span-erasure on temporal class pairs.
 
 For each temporally-opposite class pair (A, B), we restrict the model's
 pre-softmax logits to the two classes, softmax over just those two, and take
@@ -9,21 +9,29 @@ drop in binary accuracy, against three size-matched random feature sets drawn
 from all non-identified features. A set of appearance-separable reference
 pairs is included to test specificity.
 """
+
 import argparse
 import json
 import sys
 from pathlib import Path
+from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
 import torch
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
-from causal_analysis.common.steer_expansion import (build, forward_logits, cache_frames,
-                                       load_flags, FAMILY)  # noqa: E402
+from causal_analysis.common.steer_expansion import (
+    build,
+    forward_logits,
+    cache_frames,
+    load_flags,
+    FAMILY,
+)  # noqa: E402
 from causal_analysis.common.steer_span_erasure import projector  # noqa: E402
 
 
-def main():
+def main() -> None:
+    """Run the binary-discrimination span-erasure experiment for one family and save JSON."""
     ap = argparse.ArgumentParser()
     ap.add_argument("--family", required=True, choices=list(FAMILY.keys()))
     ap.add_argument("--pairs_json", default="analysis/binary_pairs.json")
@@ -50,16 +58,22 @@ def main():
     classes = sorted(set([p["pos_idx"] for p in pairs] + [p["neg_idx"] for p in pairs]))
     cache_by_c = {}
     for c in classes:
-        take = [it for it in val if label2idx.get(it.get("template", ""), -1) == c][: args.n_per_class]
+        take = [it for it in val if label2idx.get(it.get("template", ""), -1) == c][
+            : args.n_per_class
+        ]
         cache_by_c[c] = (cache_frames(take, args.ssv2_videos, proc, cfg, cfg["batch"]), len(take))
     nmin = min(v[1] for v in cache_by_c.values())
-    print(f"{len(pairs)} pairs over {len(classes)} classes; clips/class {args.n_per_class} (min {nmin})")
+    print(
+        f"{len(pairs)} pairs over {len(classes)} classes; clips/class {args.n_per_class} (min {nmin})"
+    )
 
     seeds = [int(x) for x in args.seeds.split(",")]
     n = min(len(sig), len(nonsig))
     conds = [("baseline", None), ("identified", sorted(sig))]
     for sd in seeds:
-        conds.append((f"rnd{sd}", sorted(np.random.RandomState(sd).choice(nonsig, n, replace=False))))
+        conds.append(
+            (f"rnd{sd}", sorted(np.random.RandomState(sd).choice(nonsig, n, replace=False)))
+        )
 
     # logits[cond][class] = tensor [n_clips, C]
     logits = {name: {} for name, _ in conds}
@@ -75,7 +89,17 @@ def main():
             logits[name][c] = torch.cat(outs, 0) if outs else torch.zeros(0)
         print(f"  logits done: {name}")
 
-    def binary_acc(name, a, b):
+    def binary_acc(name: str, a: int, b: int) -> Optional[float]:
+        """Two-way accuracy between a class pair under one erasure condition.
+
+        Args:
+            name: Condition key into the collected logits (baseline / identified / rnd*).
+            a: First class index of the pair.
+            b: Second class index of the pair.
+
+        Returns:
+            The binary accuracy over both classes' clips, or None if either class has no clips.
+        """
         la, lb = logits[name][a], logits[name][b]
         if la.numel() == 0 or lb.numel() == 0:
             return None
@@ -94,7 +118,15 @@ def main():
 
     cond_names = [name for name, _ in conds]
 
-    def agg(subset):
+    def agg(subset: List[Dict[str, Any]]) -> Tuple[Dict[str, Any], int]:
+        """Average each condition's binary accuracy over a subset of pair rows.
+
+        Args:
+            subset: Pair result rows to aggregate over.
+
+        Returns:
+            A tuple of (per-condition mean accuracy mapping, number of rows aggregated).
+        """
         r = [x for x in rows if x in subset]
         d = {}
         for name in cond_names:
@@ -108,17 +140,29 @@ def main():
     cats = sorted(set(x["category"] for x in temporal))
     summary_cat = {cat: agg([x for x in temporal if x["category"] == cat])[0] for cat in cats}
 
-    result = {"family": fam, "n_identified": len(sig), "conds": cond_names,
-              "summary": summary, "summary_by_category": summary_cat, "pairs": rows}
+    result = {
+        "family": fam,
+        "n_identified": len(sig),
+        "conds": cond_names,
+        "summary": summary,
+        "summary_by_category": summary_cat,
+        "pairs": rows,
+    }
     json.dump(result, open(out / f"{fam}_pair_binary.json", "w"), indent=1)
 
     print(f"\n{'set':<14}" + "".join(f"{c:>11}" for c in cond_names))
     for label, d in [("temporal", summary["temporal"]), ("reference", summary["reference"])]:
-        print(f"{label:<14}" + "".join(f"{(d[c] if d[c] is not None else float('nan')):>11.3f}" for c in cond_names))
+        print(
+            f"{label:<14}"
+            + "".join(f"{(d[c] if d[c] is not None else float('nan')):>11.3f}" for c in cond_names)
+        )
     print("-- by category --")
     for cat in cats:
         d = summary_cat[cat]
-        print(f"{cat:<14}" + "".join(f"{(d[c] if d[c] is not None else float('nan')):>11.3f}" for c in cond_names))
+        print(
+            f"{cat:<14}"
+            + "".join(f"{(d[c] if d[c] is not None else float('nan')):>11.3f}" for c in cond_names)
+        )
     print(f"\nsaved -> {fam}_pair_binary.json")
 
 
