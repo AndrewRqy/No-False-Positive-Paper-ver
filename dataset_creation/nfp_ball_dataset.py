@@ -172,6 +172,14 @@ def sample_start_position(rng: np.random.Generator) -> Tuple[float, float]:
 # 3.  VELOCITY PROFILE GENERATORS  (S2)
 # ===========================================================================
 
+_OSC_PARAM = {  # (frequency in cycles over T, phase in degrees); amplitude A_OSC below.
+    "osc_f2_p0": (2, 0), "osc_f2_p120": (2, 120), "osc_f2_p240": (2, 240),
+    "osc_f3_p0": (3, 0), "osc_f3_p90": (3, 90), "osc_f3_p180": (3, 180), "osc_f3_p270": (3, 270),
+}
+OSCILLATING_TYPES = list(_OSC_PARAM.keys())
+A_OSC = 1.4  # speed-oscillation amplitude (m/s); clipped to [V_MIN_MPS, V_MAX_MPS].
+
+
 _GEO_RATE = {
     "geo_a115": 1.15,
     "geo_a130": 1.30,
@@ -230,6 +238,18 @@ def _family_a_speeds(profile_type: str, s: float) -> np.ndarray:
 
     elif profile_type == "step_decel":
         return np.where(t < 8, s_hi, s_lo)
+
+    elif profile_type.startswith("osc_"):
+        # oscillating speed: s(t) = s + A_OSC * sin(2*pi*f*t/T + phase), clipped to
+        # the speed range. Unlike the smooth families, |a(t)| = |s(t+1) - s(t)| itself
+        # swings (large near zero-crossings, ~0 near the peaks), giving high within-video
+        # acceleration variance. f <= 3 avoids aliasing at the 8-step (every-other-frame)
+        # tau sampling. The mean over an integer number of cycles is s, so displacement
+        # stays bounded like the other Family A profiles.
+        f, phase_deg = _OSC_PARAM[profile_type]
+        phase = math.radians(phase_deg)
+        return np.clip(s + A_OSC * np.sin(2 * math.pi * f * t / T + phase),
+                       V_MIN_MPS, V_MAX_MPS)
 
     elif profile_type.startswith("geo_"):
         # geometric speed: s_seq[i+1]/s_seq[i] = r (constant ratio), so
