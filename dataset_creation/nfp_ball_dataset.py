@@ -90,31 +90,27 @@ FAMILY_B_TYPES = [
 
 
 def world_to_px(world_x: float, world_y: float) -> Tuple[float, float]:
-    """Convert world-space metres to pixel coordinates.
+    """Convert world-space metres to pixel coordinates of the rendered frames.
 
     World space is metres with the origin at the scene centre and y-up; pixel
-    space has its origin at the top-left corner with y-down.
+    space has its origin at the top-left corner with y-down. The Kubric
+    orthographic camera looks straight down at the field and renders world +x
+    to the left and world +y downward, so pixel coordinates follow that
+    orientation (a 180-degree rotation of the plain x-right / y-up layout).
 
     Derivation:
-      px_x = (world_x - (-7)) / 14 * 224 = (world_x + 7) * 16
-      px_y = (7 - world_y)  / 14 * 224  = (7 - world_y) * 16   [y-flip]
-
-    Args:
-        world_x: X coordinate in world metres.
-        world_y: Y coordinate in world metres.
-
-    Returns:
-        The (px_x, px_y) pixel coordinates.
+      px_x = (7 - world_x) / 14 * 224 = (7 - world_x) * 16
+      px_y = (world_y + 7) / 14 * 224 = (world_y + 7) * 16
     """
-    px_x = (world_x + HALF_FIELD_M) * PX_PER_M
-    px_y = (HALF_FIELD_M - world_y) * PX_PER_M
+    px_x = (HALF_FIELD_M - world_x) * PX_PER_M
+    px_y = (world_y + HALF_FIELD_M) * PX_PER_M
     return px_x, px_y
 
 
 def px_to_world(px_x: float, px_y: float) -> Tuple[float, float]:
     """Inverse of world_to_px."""
-    world_x = px_x * M_PER_PX - HALF_FIELD_M
-    world_y = -px_y * M_PER_PX + HALF_FIELD_M
+    world_x = HALF_FIELD_M - px_x * M_PER_PX
+    world_y = px_y * M_PER_PX - HALF_FIELD_M
     return world_x, world_y
 
 
@@ -590,8 +586,8 @@ def _run_sanity_checks() -> bool:
         check(f"coord round-trip ({wx}, {wy})", abs(rx - wx) < 1e-9 and abs(ry - wy) < 1e-9)
 
     # --- Canvas corners map to pixel corners ---
-    check("world (-7,  7) → px (0,   0)", world_to_px(-7, 7) == (0.0, 0.0))
-    check("world ( 7, -7) → px (224, 224)", world_to_px(7, -7) == (224.0, 224.0))
+    check("world ( 7, -7) → px (0,   0)", world_to_px(7, -7) == (0.0, 0.0))
+    check("world (-7,  7) → px (224, 224)", world_to_px(-7, 7) == (224.0, 224.0))
 
     # --- On-screen / off-screen ---
     check("centre on screen", is_on_screen(112, 112))
